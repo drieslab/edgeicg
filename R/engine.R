@@ -220,10 +220,13 @@
 }
 
 # ---------------------------------------------------------------- block functions (caller or daemons)
-.edgeicg_readX <- function(st, gi) { X <- st$pv$read(gi); X / pmax(st$lib, 1) * st$scale }
+.edgeicg_readX <- function(st, gi, blk = NULL) {
+  X <- if (is.null(blk)) st$pv$read(gi) else as.matrix(Matrix::t(blk))
+  X / pmax(st$lib, 1) * st$scale
+}
 
-.edgeicg_p1 <- function(gi, st) {
-  X <- .edgeicg_readX(st, gi); B <- length(gi)
+.edgeicg_p1 <- function(gi, st, blk = NULL) {
+  X <- .edgeicg_readX(st, gi, blk); B <- length(gi)
   a <- matrix(NA_real_, st$K, B); b1 <- se1 <- matrix(NA_real_, st$P_n, B)
   for (t in st$fitted) {
     z <- st$dz[[t]]; Y <- X[z$idx, , drop = FALSE]
@@ -241,8 +244,8 @@
   list(a = a, b1 = b1, se1 = se1, mbar = as.matrix(st$E %*% X), detn = detn, tsum = tsum)
 }
 
-.edgeicg_p2 <- function(gi, st) {
-  X <- .edgeicg_readX(st, gi); B <- length(gi); P_n <- st$P_n
+.edgeicg_p2 <- function(gi, st, blk = NULL) {
+  X <- .edgeicg_readX(st, gi, blk); B <- length(gi); P_n <- st$P_n
   Yres <- X - as.matrix(st$Wl %*% X) - st$cmu * st$a0[st$types, gi, drop = FALSE]
   em <- function() matrix(NA_real_, P_n, B)
   g <- se <- lapply(st$tested, function(s) em()); omni <- bM <- seM <- Sm <- Sc <- zc0 <- em()
@@ -296,10 +299,15 @@
   }
   mirai::everywhere({ Sys.setenv(OMP_NUM_THREADS = "1", VECLIB_MAXIMUM_THREADS = "1", OPENBLAS_NUM_THREADS = "1")
     loadNamespace("edgeicg"); TRUE })[]
+  # An in-memory matrix is not copied to every daemon: each task carries its own sparse block instead (sent once
+  # in total). Other providers (e.g. a GiottoDisk store) are read by the daemons themselves.
+  ship <- is.function(st$pv$slice)
+  if (ship) { pv_main <- st$pv; st$pv <- list(genes = pv_main$genes, kind = "shipped") }
   push(st, "st")
-  call1 <- function(gi, f) f(gi, .edgeicg_st); environment(call1) <- globalenv()
+  call1 <- function(task, f) f(task$gi, .edgeicg_st, task$blk); environment(call1) <- globalenv()
   list(map = function(x, f) {
-         r <- mirai::mirai_map(x, call1, .args = list(f = f))[]
+         tasks <- lapply(x, function(gi) list(gi = gi, blk = if (ship) pv_main$slice(gi)))
+         r <- mirai::mirai_map(tasks, call1, .args = list(f = f))[]
          bad <- vapply(r, mirai::is_mirai_error, TRUE)
          if (any(bad)) stop("daemon error: ", as.character(r[[which(bad)[1]]]))
          r },

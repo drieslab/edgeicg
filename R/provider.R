@@ -13,7 +13,8 @@ counts_provider <- function(counts) {
   if (is.null(rownames(counts))) stop("counts needs gene names as row names")
   force(counts)
   list(genes = rownames(counts), n_cells = ncol(counts), kind = "memory",
-       read = function(gi) as.matrix(Matrix::t(counts[gi, , drop = FALSE])))
+       read = function(gi) as.matrix(Matrix::t(counts[gi, , drop = FALSE])),
+       slice = function(gi) counts[gi, , drop = FALSE])               # compact block, shipped to daemons
 }
 
 #' @rdname counts_provider
