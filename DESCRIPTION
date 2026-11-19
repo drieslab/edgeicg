@@ -1,0 +1,21 @@
+Package: edgeicg
+Type: Package
+Title: Spillover-Aware Interaction-Changed Genes at Contact, Paracrine and Niche Scale
+Version: 0.1.0
+Authors@R: person("Ruben", "Dries", email = "rdries@bu.edu", role = c("aut", "cre"))
+Description: Tests whether a receiver cell type changes a gene's expression with its
+    exposure to a sender cell type, at three spatial scales: touching cells (contact),
+    short-range neighbours (paracrine) and the regional neighbourhood (niche). Transcripts
+    leaked from touching neighbours are modelled from the data and removed per cell before
+    testing. Niche effects are screened with a calibrated marginal test (toroidal-shift
+    null) and attributed to senders by exact fine-mapping. Counts are read in gene blocks
+    through a provider, so whole sections run in bounded memory, in memory or from a
+    disk-backed store, sequentially or on 'mirai' daemons.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Depends: R (>= 4.2)
+Imports: Matrix, data.table, RANN, stats, utils
+Suggests: mirai, testthat (>= 3.0.0), GiottoDisk, arrow
+Config/testthat/edition: 3
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
