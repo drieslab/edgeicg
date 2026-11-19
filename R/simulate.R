@@ -29,7 +29,8 @@ simulate_edgeicg <- function(n = 4000, G = 200, seed = 1, kappa = 0.10, gamma = 
   prof <- matrix(p0, K, G, byrow = TRUE); free <- sample.int(G)
   for (t in 1:K) { mk <- free[((t - 1) * 15 + 1):(t * 15)]; prof[t, mk] <- prof[t, mk] * 10 }
   prof <- prof / rowSums(prof)
-  pool <- setdiff(order(-p0)[seq_len(round(G * 0.4))], free[1:(K * 15)])
+  pool <- setdiff(order(-p0)[seq_len(round(G * 0.8))], free[1:(K * 15)])
+  if (length(pool) < 30) stop("G is too small: need at least 30 non-marker genes for the effects (use G >= 100)")
   S1 <- pool[1:10]; S2 <- pool[11:20]; S3 <- pool[21:30]
   nn <- RANN::nn2(coords, k = 7); d <- nn$nn.dists[, -1]; j <- nn$nn.idx[, -1]
   w <- exp(-d / (0.8 * stats::median(d))); w <- w / rowSums(w)
