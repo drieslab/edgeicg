@@ -12,9 +12,22 @@ At niche scale, co-located senders are collinear, so the analysis runs in two st
 2. Exact fine-mapping over 1- and 2-sender models attributes each hit to a sender, with a credible set.
 
 ## Scale
-- Counts are read only in gene blocks, through a provider: `counts_provider()` for an in-memory matrix, or `counts_provider_store()` for a GiottoDisk store.
-- Memory is bounded by `block_genes`.
-- Blocks run sequentially or on `mirai` daemons (`workers = `), with identical results.
+Every statistic of the model is a sum over cells, so each pass is a sweep of tasks that return partial sums.
+
+- **Counts** are read through a provider:
+  - `counts_provider()` for an in-memory matrix;
+  - `counts_provider_store()` (or a GiottoDisk expression store passed directly) for data on disk.
+- **In memory** (the default), a task is a gene block over all cells. Memory is bounded by `block_genes`.
+- **Above `window_cells` cells** (the default for a store: one window per worker), cells are visited in spatially ordered windows and the sums are added up.
+  - Memory then no longer grows with the section.
+  - A store is baked once in window order with `GiottoDisk::storeWrite()` and read in contiguous cell ranges, once per pass.
+- **Tasks** run sequentially or on `mirai` daemons (`workers = `). Results are identical either way, and identical with and without windows (up to rounding).
+- **Rust kernels:** with the [edgeicgrs](https://github.com/drieslab/edgeicgrs) package installed, `backend = "auto"` computes the matrix products in Rust (faer). That is 20–25× faster than R's reference BLAS for these shapes, on every platform.
+
+On the whole Atera kidney section (399k cells, 3,000 genes):
+- 5 min in memory with 8 daemons;
+- 6 min from a GiottoDisk store with 4 daemons (41 GB peak);
+- 10 min with gene blocks from the store (31 GB).
 
 ## Use
 ```r
@@ -29,5 +42,8 @@ For real data:
 - Pass touching-cell edges from the cell outlines with `contact_from_polygons()` as `spill_edges`.
 - Pass the library size over all genes as `lib`.
 
+## Giotto
+`Giotto::findInteractionChangedFeats(g, cluster_column = ..., method = "edgeicg")` runs this engine on a giotto object. The expression can be in memory or GiottoDisk-backed.
+
 ## Status
-0.1.0 is a port of the 2026 ICG2 prototype. With `drop_degenerate = FALSE`, it reproduces the prototype exactly on the kidney and breast crops.
+0.1.0 is a port of the 2026 ICG2 prototype. With `drop_degenerate = FALSE`, it reproduces the prototype to within 1e-8 on the kidney and breast crops. This holds for both backends and for one window or many.
