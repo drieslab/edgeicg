@@ -17,10 +17,10 @@
 .edgeicg_engine <- function(pv, coords, types, lib, ex, spill_edges, block_genes, window_cells, min_cells, min_det,
                             min_exposed, exposed_at, huber, scale, calibrate, B, min_shift, seed, calib_cond, attribute,
                             q_thr, max_size, prior_sd, cs_level, workers, xp, drop_degenerate, prefilter, panel_genes,
-                            verbose) {
+                            verbose, covariates = NULL) {
   t0 <- proc.time()[[3]]; tm <- c()
   S <- .edgeicg_setup(pv, coords, types, lib, ex, spill_edges, block_genes, window_cells, min_cells, scale, calibrate,
-                      B, min_shift, seed, calib_cond, drop_degenerate, verbose, t0)
+                      B, min_shift, seed, calib_cond, drop_degenerate, verbose, t0, covariates)
   genes <- S$genes; G <- S$G; n <- S$n; K <- S$K; tested <- S$tested; blocks <- S$blocks; sh <- S$sh
   ct <- S$ct; wn <- S$wn; tr <- S$tr; ts <- S$ts; het <- S$het; smat <- S$smat; dz <- S$dz; pairs <- S$pairs
   fitted <- S$fitted; P_n <- S$P_n; n_dropped <- S$n_dropped; sw_p <- S$sw_p; win <- S$win; st <- S$st
@@ -301,7 +301,8 @@
 # Setup shared by every pass: shifts, window plan, per-receiver-type designs and their gene-independent quantities,
 # the touching-sender averaging matrix E. Returns the variables the engine uses, and st (the state the tasks need).
 .edgeicg_setup <- function(pv, coords, types, lib, ex, spill_edges, block_genes, window_cells, min_cells, scale,
-                           calibrate, B, min_shift, seed, calib_cond, drop_degenerate, verbose, t0 = proc.time()[[3]]) {
+                           calibrate, B, min_shift, seed, calib_cond, drop_degenerate, verbose, t0 = proc.time()[[3]],
+                           covariates = NULL) {
   genes <- pv$genes; G <- length(genes); n <- length(types); K <- max(types)
   tested <- c("contact", "paracrine", "niche")
   blocks <- unname(split(seq_len(G), ceiling(seq_len(G) / block_genes)))
@@ -332,6 +333,11 @@
     others <- setdiff(seq_len(K), t)
     cols <- do.call(rbind, lapply(tested, function(s) data.frame(scale = s, k = others)))
     D <- do.call(cbind, lapply(tested, function(s) smat[[s]][idx, others, drop = FALSE]))
+    if (!is.null(covariates)) {                                      # adjusted for, not tested
+      cv <- covariates[idx, , drop = FALSE]                           # centred within the type: the intercept stays
+      D <- cbind(D, sweep(cv, 2, colMeans(cv)))                       # the receiver baseline the leak model uses
+      cols <- rbind(cols, data.frame(scale = "covariate", k = NA_integer_)[rep(1L, ncol(covariates)), , drop = FALSE])
+    }
     if (drop_degenerate) {
       keep <- apply(D, 2, stats::var) > 1e-12
       n_dropped <- n_dropped + sum(!keep); D <- D[, keep, drop = FALSE]; cols <- cols[keep, , drop = FALSE]

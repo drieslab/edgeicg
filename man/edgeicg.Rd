@@ -13,6 +13,8 @@ edgeicg(
   ex = NULL,
   block_genes = 500L,
   window_cells = NULL,
+  panel_genes = 3000L,
+  covariates = NULL,
   workers = 0L,
   backend = c("auto", "rust", "r"),
   threads = NULL,
@@ -27,6 +29,7 @@ edgeicg(
   min_exposed = 30L,
   exposed_at = 0.1,
   drop_degenerate = TRUE,
+  prefilter = TRUE,
   seed = 1L,
   verbose = TRUE,
   ...
@@ -57,6 +60,15 @@ counts; for a store, one window per worker, at most \code{getOption("edgeicg.win
 store is then read once per sweep, in contiguous cell ranges). Results equal the one-window run up to
 rounding.}
 
+\item{panel_genes}{with several windows, genes are processed in panels of at most this many (each a separately
+baked store when counts are on disk), which bounds the memory of the partial sums; every count is still read
+once per pass. Default 3000.}
+
+\item{covariates}{optional numeric matrix (cells x q) of covariates added to every receiver type's design
+and adjusted for but not tested, e.g. a zonation score or \code{\link[=spatial_basis]{spatial_basis()}} to absorb large-scale spatial
+trends (zonation, sub-state gradients) that otherwise correlate with exposure. Columns without variance
+within a receiver type are dropped (with \code{drop_degenerate}).}
+
 \item{workers}{number of mirai daemons (0 = sequential). One window: tasks are gene blocks; several windows:
 tasks are bands of windows. Results are identical.}
 
@@ -81,6 +93,10 @@ above \code{exposed_at}.}
 
 \item{drop_degenerate}{drop exposure columns without variance within a receiver type (their tests are NA).
 FALSE reproduces the 2026 prototype exactly.}
+
+\item{prefilter}{drop genes detected in fewer than \code{min_det} of the cells of every receiver type before the
+fit (one cheap detection pass). Such genes have no testable entry; without the prefilter they still enter
+the regression of the leak coefficients across genes. FALSE reproduces the 2026 prototype exactly.}
 
 \item{seed}{seed of the calibration shifts.}
 

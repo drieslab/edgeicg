@@ -25,6 +25,10 @@
 #' @param backend `"auto"` (Rust kernels from the edgeicgrs package when installed, else R), `"rust"` or `"r"`.
 #'   The Rust kernels are the matrix cross-products of the sweeps, the hotspot of the method.
 #' @param threads threads per process for the Rust kernels (default: 1 with workers, all cores without).
+#' @param covariates optional numeric matrix (cells x q) of covariates added to every receiver type's design
+#'   and adjusted for but not tested, e.g. a zonation score or [spatial_basis()] to absorb large-scale spatial
+#'   trends (zonation, sub-state gradients) that otherwise correlate with exposure. Columns without variance
+#'   within a receiver type are dropped (with `drop_degenerate`).
 #' @param panel_genes with several windows, genes are processed in panels of at most this many (each a separately
 #'   baked store when counts are on disk), which bounds the memory of the partial sums; every count is still read
 #'   once per pass. Default 3000.
@@ -48,7 +52,7 @@
 #' @return an `EdgeICG` object; see [edgeicg_results()].
 #' @export
 edgeicg <- function(counts, coords, types, lib = NULL, spill_edges = NULL, ex = NULL, block_genes = 500L,
-                    window_cells = NULL, panel_genes = 3000L, workers = 0L, backend = c("auto", "rust", "r"), threads = NULL, calibrate = TRUE, calib_cond = TRUE, attribute = TRUE,
+                    window_cells = NULL, panel_genes = 3000L, covariates = NULL, workers = 0L, backend = c("auto", "rust", "r"), threads = NULL, calibrate = TRUE, calib_cond = TRUE, attribute = TRUE,
                     B = 30L, min_shift = 450, q_thr = 0.05, min_cells = 60L, min_det = 0.01, min_exposed = 30L,
                     exposed_at = 0.1, drop_degenerate = TRUE, prefilter = TRUE, seed = 1L, verbose = TRUE, ...) {
   backend <- match.arg(backend)
@@ -70,6 +74,10 @@ edgeicg <- function(counts, coords, types, lib = NULL, spill_edges = NULL, ex = 
     lib <- Matrix::colSums(counts)
   }
   K <- length(lev)
+  if (!is.null(covariates)) {
+    covariates <- as.matrix(covariates)
+    if (nrow(covariates) != n || !is.numeric(covariates) || anyNA(covariates)) stop("covariates must be a numeric n x q matrix without NA")
+  }
   if (is.null(window_cells)) window_cells <- if (identical(pv$kind, "memory")) Inf else            # a store is read
     min(getOption("edgeicg.window_cells", 50000), ceiling(n / max(1L, workers)))                    # once per sweep
   if (is.null(ex)) ex <- edgeicg_exposures(coords, tcode, K, k = opt("k", 8), sigma_p = opt("sigma_p", 25),
@@ -79,10 +87,10 @@ edgeicg <- function(counts, coords, types, lib = NULL, spill_edges = NULL, ex = 
                        min_exposed, exposed_at, opt("huber", 1.345), opt("scale", 100), calibrate, B, min_shift, seed,
                        calib_cond, attribute, q_thr, opt("max_size", 2), opt("prior_sd", c(0.05, 0.1, 0.2)),
                        opt("cs_level", 0.95), as.integer(workers), .edgeicg_xp(backend, as.integer(threads)),
-                       drop_degenerate, prefilter, panel_genes, verbose)
+                       drop_degenerate, prefilter, panel_genes, verbose, covariates)
   r$types <- lev; r$n_cells <- n; r$type_n <- tabulate(tcode, K)
   r$settings <- list(block_genes = block_genes, window_cells = window_cells, workers = workers, backend = backend,
-                     threads = threads, calibrate = calibrate,
+                     threads = threads, covariates = if (is.null(covariates)) 0L else ncol(covariates), calibrate = calibrate,
                      calib_cond = calib_cond, B = B, min_shift = min_shift, q_thr = q_thr, exposures = ex$settings,
                      spill = if (is.null(spill_edges)) "knn" else "custom")
   structure(r, class = "EdgeICG")
@@ -139,3 +147,23 @@ print.EdgeICG <- function(x, ...) {
   force(threads)
   list(xp = function(A, B) edgeicgrs::crossprod_rs(A, B, threads), mp = function(A, B) edgeicgrs::matprod_rs(A, B, threads))
 }
+
+#' Spatial basis for large-scale trends
+#'
+#' A tensor-product natural-spline basis of the cell positions, to pass as `covariates` to [edgeicg()]: it absorbs
+#' smooth spatial trends (tissue zonation, gradients of cell states within a type) so that they are not mistaken
+#' for exposure effects. `df` per axis sets the scale of the trends removed: with a section of width W, trends
+#' longer than about W / df are absorbed.
+#'
+#' @param coords n x 2 cell centroids.
+#' @param df degrees of freedom per axis (default 4: 4 + 4 + 16 = 24 columns).
+#' @return a numeric matrix (cells x (2 df + df^2)), columns centred.
+#' @export
+spatial_basis <- function(coords, df = 4L) {
+  bx <- splines::ns(coords[, 1], df = df); by <- splines::ns(coords[, 2], df = df)
+  X <- cbind(bx, by, do.call(cbind, lapply(seq_len(df), function(j) bx * by[, j])))
+  X <- sweep(X, 2, colMeans(X))
+  colnames(X) <- c(paste0("sx", seq_len(df)), paste0("sy", seq_len(df)), paste0("sxy", seq_len(df^2)))
+  X
+}
+

@@ -32,6 +32,8 @@ cells x genes matrix (sparse \code{dgCMatrix} preferred; dense is accepted);
 \item \code{order(ord)}: a provider whose cell \code{i} is this provider's cell \code{ord[i]}. The engine visits cells in
 spatially ordered windows (see \code{window_cells} in \code{\link[=edgeicg]{edgeicg()}}) and asks the provider for that order once;
 \item \code{cleanup()}: removes anything \code{order()} created;
+\item \code{narrow(gi)}: a provider for genes \code{gi} only (used by the gene prefilter);
+\item \code{split(list_of_gi)}: one provider per gene panel (windowed runs with more than \code{panel_genes} genes);
 \item optionally \code{slice(lo, hi, gi)}: the same block as a compact genes x cells matrix, for providers whose data
 live in memory (the block is sent to the worker with its task);
 \item \code{read(gi)}: all cells for genes \code{gi} (cells x genes), kept for direct use.
