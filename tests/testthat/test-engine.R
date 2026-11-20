@@ -74,3 +74,18 @@ test_that("the prefilter drops only genes without a testable entry", {
   win <- run(TRUE, 700)
   expect_equal(win$scale_fits$contact$z, on$scale_fits$contact$z, tolerance = 1e-8)
 })
+
+test_that("gene panels (windowed, more genes than panel_genes) equal the one-window run", {
+  sim <- simulate_edgeicg(n = 3000, G = 100, seed = 7, gamma = 1.2)
+  run <- function(wc, w, pg = 3000L) edgeicg(sim$counts, sim$coords, sim$types, min_shift = 150, B = 8, block_genes = 20,
+                                            window_cells = wc, panel_genes = pg, workers = w, backend = "r", verbose = FALSE)
+  one <- run(Inf, 0)
+  runs <- list(run(700, 0, 40))
+  if (requireNamespace("mirai", quietly = TRUE)) runs <- c(runs, list(run(700, 2, 40)))
+  for (f in runs) {
+    expect_equal(f$pairs$lambda, one$pairs$lambda, tolerance = 1e-8)
+    expect_equal(f$scale_fits$contact$z, one$scale_fits$contact$z, tolerance = 1e-8)
+    expect_equal(f$screen$z, one$screen$z, tolerance = 1e-8)
+    expect_equal(f$attribution$alpha, one$attribution$alpha, tolerance = 1e-8)
+  }
+})

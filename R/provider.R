@@ -8,6 +8,7 @@
 #'   spatially ordered windows (see `window_cells` in [edgeicg()]) and asks the provider for that order once;
 #' * `cleanup()`: removes anything `order()` created;
 #' * `narrow(gi)`: a provider for genes `gi` only (used by the gene prefilter);
+#' * `split(list_of_gi)`: one provider per gene panel (windowed runs with more than `panel_genes` genes);
 #' * optionally `slice(lo, hi, gi)`: the same block as a compact genes x cells matrix, for providers whose data
 #'   live in memory (the block is sent to the worker with its task);
 #' * `read(gi)`: all cells for genes `gi` (cells x genes), kept for direct use.
@@ -36,6 +37,7 @@ counts_provider <- function(counts) {
        slice = blk,
        order = function(ord) .provider_memory(counts, if (is.null(perm)) ord else perm[ord]),
        narrow = function(gi) .provider_memory(counts[gi, , drop = FALSE], perm),
+       split = function(gl) lapply(gl, function(gi) .provider_memory(counts[gi, , drop = FALSE], perm)),
        cleanup = function() invisible(),
        read = function(gi) Matrix::t(methods::as(counts[gi, , drop = FALSE], "CsparseMatrix")))
 }
@@ -65,6 +67,7 @@ counts_provider_store <- function(store, genes, cells) {
          .provider_baked(baked, genes, path)
        },
        narrow = function(gi) counts_provider_store(store, genes[gi], cells),
+       split = function(gl) lapply(gl, function(gi) counts_provider_store(store, genes[gi], cells)),
        cleanup = function() invisible(),
        read = function(gi) get(store[genes[gi], cells])[cells, genes[gi], drop = FALSE])
 }
@@ -87,6 +90,14 @@ counts_provider_store <- function(store, genes, cells) {
          b2 <- GiottoDisk::storeWrite(GiottoDisk::parquetExprStore(path = p2), baked[gi, ])
          unlink(path, recursive = TRUE)
          .provider_baked(b2, genes[gi], p2)
+       },
+       split = function(gl) {                                        # one baked store per gene panel
+         out <- lapply(gl, function(gi) {
+           p2 <- tempfile("edgeicg_bake_", fileext = ".parquet")
+           .provider_baked(GiottoDisk::storeWrite(GiottoDisk::parquetExprStore(path = p2), baked[gi, ]), genes[gi], p2)
+         })
+         unlink(path, recursive = TRUE)
+         out
        },
        cleanup = function() unlink(path, recursive = TRUE),
        read = function(gi) stop("read() is not available on a baked store; use rows()"))

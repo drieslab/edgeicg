@@ -25,6 +25,9 @@
 #' @param backend `"auto"` (Rust kernels from the edgeicgrs package when installed, else R), `"rust"` or `"r"`.
 #'   The Rust kernels are the matrix cross-products of the sweeps, the hotspot of the method.
 #' @param threads threads per process for the Rust kernels (default: 1 with workers, all cores without).
+#' @param panel_genes with several windows, genes are processed in panels of at most this many (each a separately
+#'   baked store when counts are on disk), which bounds the memory of the partial sums; every count is still read
+#'   once per pass. Default 3000.
 #' @param calibrate run the toroidal-shift calibration of the niche scale (recommended).
 #' @param calib_cond also calibrate the conditional (all-sender) niche z (secondary output).
 #' @param attribute attribute niche screen hits to senders.
@@ -45,7 +48,7 @@
 #' @return an `EdgeICG` object; see [edgeicg_results()].
 #' @export
 edgeicg <- function(counts, coords, types, lib = NULL, spill_edges = NULL, ex = NULL, block_genes = 500L,
-                    window_cells = NULL, workers = 0L, backend = c("auto", "rust", "r"), threads = NULL, calibrate = TRUE, calib_cond = TRUE, attribute = TRUE,
+                    window_cells = NULL, panel_genes = 3000L, workers = 0L, backend = c("auto", "rust", "r"), threads = NULL, calibrate = TRUE, calib_cond = TRUE, attribute = TRUE,
                     B = 30L, min_shift = 450, q_thr = 0.05, min_cells = 60L, min_det = 0.01, min_exposed = 30L,
                     exposed_at = 0.1, drop_degenerate = TRUE, prefilter = TRUE, seed = 1L, verbose = TRUE, ...) {
   backend <- match.arg(backend)
@@ -76,7 +79,7 @@ edgeicg <- function(counts, coords, types, lib = NULL, spill_edges = NULL, ex = 
                        min_exposed, exposed_at, opt("huber", 1.345), opt("scale", 100), calibrate, B, min_shift, seed,
                        calib_cond, attribute, q_thr, opt("max_size", 2), opt("prior_sd", c(0.05, 0.1, 0.2)),
                        opt("cs_level", 0.95), as.integer(workers), .edgeicg_xp(backend, as.integer(threads)),
-                       drop_degenerate, prefilter, verbose)
+                       drop_degenerate, prefilter, panel_genes, verbose)
   r$types <- lev; r$n_cells <- n; r$type_n <- tabulate(tcode, K)
   r$settings <- list(block_genes = block_genes, window_cells = window_cells, workers = workers, backend = backend,
                      threads = threads, calibrate = calibrate,

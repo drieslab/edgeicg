@@ -16,7 +16,8 @@
 
 .edgeicg_engine <- function(pv, coords, types, lib, ex, spill_edges, block_genes, window_cells, min_cells, min_det,
                             min_exposed, exposed_at, huber, scale, calibrate, B, min_shift, seed, calib_cond, attribute,
-                            q_thr, max_size, prior_sd, cs_level, workers, xp, drop_degenerate, prefilter, verbose) {
+                            q_thr, max_size, prior_sd, cs_level, workers, xp, drop_degenerate, prefilter, panel_genes,
+                            verbose) {
   t0 <- proc.time()[[3]]; tm <- c()
   S <- .edgeicg_setup(pv, coords, types, lib, ex, spill_edges, block_genes, window_cells, min_cells, scale, calibrate,
                       B, min_shift, seed, calib_cond, drop_degenerate, verbose, t0)
@@ -33,7 +34,22 @@
   }
   run <- .edgeicg_runner(workers, st)
   on.exit(run$close(), add = TRUE)
-  do_sweep <- function(name, groups, extra = NULL) .edgeicg_sweep(run, st, win, bands, name, groups, extra, workers)
+  # With several windows a band keeps partial sums for all the genes it is given until its windows are done, so
+  # genes are processed in panels of at most panel_genes (each with its own baked store when counts are on disk):
+  # memory is bounded by the panel, and every count is still read once per sweep.
+  do_sweep <- function(name, groups, extra = NULL) {
+    if (is.null(st$panels)) return(.edgeicg_sweep(run, st, win, bands, name, groups, extra, workers))
+    out <- vector("list", length(groups))
+    for (pp in st$panels) {
+      k <- which(vapply(groups, function(g) all(g >= pp$lo & g <= pp$hi), TRUE)); if (!length(k)) next
+      st$pv <<- pp$pv; st$goff <<- pp$lo - 1L
+      if (workers < 1 || !is.function(st$pv$slice)) run$set(list(pv = st$pv, goff = st$goff))
+      out[k] <- .edgeicg_sweep(run, st, win, bands, name, groups[k], extra[k], workers)
+    }
+    out
+  }
+  panel_of <- function(g) if (is.null(st$panels)) rep(1L, length(g)) else
+    findInterval(g, vapply(st$panels, `[[`, 1, "lo"))
   # pass 0 (prefilter): genes detected in fewer than min_det of the cells of every receiver type have no testable
   # entry; they are dropped before the fit (they would only enter the lambda / mu regression across genes)
   n_prefiltered <- 0L
@@ -44,12 +60,23 @@
     keep <- which(colSums(det0[fitted, , drop = FALSE] / pmax(tabulate(types, K)[fitted], 1) >= min_det) > 0)
     if (!length(keep)) stop("no gene is detected in at least min_det of the cells of any receiver type")
     n_prefiltered <- G - length(keep)
-    if (n_prefiltered > 0) {
-      st$pv <- st$pv$narrow(keep); genes <- genes[keep]; G <- length(keep)
-      blocks <- unname(split(seq_len(G), ceiling(seq_len(G) / block_genes)))
-      if (workers < 1 || !is.function(st$pv$slice)) run$set(list(pv = st$pv))
-    }
-    .say(verbose, t0, "prefilter: %d of %d genes kept (detected in >= %.3g of a receiver type)", G, G + n_prefiltered, min_det)
+    .say(verbose, t0, "prefilter: %d of %d genes kept (detected in >= %.3g of a receiver type)", length(keep), G, min_det)
+  } else keep <- seq_len(G)
+  if (!st$single && length(keep) > panel_genes) {                     # gene panels (several windows)
+    np <- ceiling(length(keep) / panel_genes); nb <- ceiling(length(keep) / block_genes)
+    pb <- split(seq_len(nb), ceiling(seq_len(nb) * np / nb))
+    rng <- lapply(pb, function(b) c((b[1] - 1L) * block_genes + 1L, min(b[length(b)] * block_genes, length(keep))))
+    provs <- st$pv$split(lapply(rng, function(r) keep[r[1]:r[2]]))
+    st$panels <- Map(function(r, p) list(lo = r[1], hi = r[2], pv = p), rng, provs)
+    on.exit(for (pp in st$panels) pp$pv$cleanup(), add = TRUE)
+    .say(verbose, t0, "%d gene panels of <= %d genes", length(st$panels), panel_genes)
+  } else if (length(keep) < G) {
+    st$pv <- st$pv$narrow(keep)
+    if (workers < 1 || !is.function(st$pv$slice)) run$set(list(pv = st$pv))
+  }
+  if (length(keep) < G) {
+    genes <- genes[keep]; G <- length(keep)
+    blocks <- unname(split(seq_len(G), ceiling(seq_len(G) / block_genes)))
   }
   per_type <- function(R, f) lapply(R, function(r) lapply(seq_len(K), function(t) if (!is.null(r$t[[t]])) f(dz[[t]], r$t[[t]])))
 
@@ -178,7 +205,8 @@
   Att <- NULL
   if (attribute) {
     hit_any <- which(colSums(qM < q_thr, na.rm = TRUE) > 0)
-    hblocks <- unname(split(hit_any, ceiling(seq_along(hit_any) / block_genes)))
+    hblocks <- unlist(lapply(unname(split(hit_any, panel_of(hit_any))), function(h)
+      unname(split(h, ceiling(seq_along(h) / block_genes)))), recursive = FALSE)      # within a panel
     plans <- lapply(hblocks, function(gi) lapply(seq_len(K), function(t) {
       z <- dz[[t]]; if (is.null(z) || !length(z$nsend)) return(NULL)
       rows <- which(pairs$receiver == t)
@@ -245,11 +273,12 @@
 # the bands are added up.
 .edgeicg_sweep <- function(run, st, win, bands, name, groups, extra, workers) {
   ship <- workers > 0 && is.function(st$pv$slice)                     # in-memory counts travel with the task
-  halo <- .sweep_pass(name) != "p1"
+  halo <- .sweep_pass(name) %in% c("p2", "p3")
+  goff <- if (is.null(st$goff)) 0L else st$goff                        # gene offset of the current panel
   wspec <- function(w, ug, ctx) {
     wi <- c(list(w = w), as.list(win$w[w, ]))
     if (ctx) wi$ctx <- .ctx_build(st, wi, name)
-    if (ship) wi$blk <- st$pv$slice(if (halo) wi$rlo else wi$lo, if (halo) wi$rhi else wi$hi, ug)
+    if (ship) wi$blk <- st$pv$slice(if (halo) wi$rlo else wi$lo, if (halo) wi$rhi else wi$hi, ug - goff)
     wi
   }
   if (st$single) {

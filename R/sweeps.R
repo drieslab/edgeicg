@@ -62,7 +62,7 @@
 # raw counts of the read range for genes ug -> cells x genes, sparse, composition scale
 .edgeicg_read <- function(st, wi, ug, halo) {
   r0 <- if (halo) wi$rlo else wi$lo; r1 <- if (halo) wi$rhi else wi$hi
-  X <- if (!is.null(wi$blk)) Matrix::t(wi$blk) else st$pv$rows(r0, r1, ug)
+  X <- if (!is.null(wi$blk)) Matrix::t(wi$blk) else st$pv$rows(r0, r1, ug - (if (is.null(st$goff)) 0L else st$goff))
   X <- methods::as(methods::as(methods::as(X, "CsparseMatrix"), "generalMatrix"), "dMatrix")
   lib <- if (is.null(st$ord)) st$lib[r0:r1] else st$lib[st$ord[r0:r1]]
   X@x <- X@x * (st$scale / pmax(lib, 1))[X@i + 1L]
