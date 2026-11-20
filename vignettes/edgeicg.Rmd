@@ -1,0 +1,98 @@
+---
+title: "Spillover-aware interaction-changed genes with edgeicg"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Spillover-aware interaction-changed genes with edgeicg}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+`edgeicg()` asks, for every receiver cell type, sender cell type and gene, whether the receiver's expression
+changes with its exposure to the sender at three scales:
+
+- **contact**: touching cells;
+- **paracrine**: short-range neighbours, Gaussian kernel with σ = 25 µm;
+- **niche**: the regional neighbourhood, σ = 150 µm.
+
+In imaging-based data, a touching cell's transcripts leak into its neighbour. That leak looks like a contact
+effect: the receiver appears to express the sender's markers. edgeicg models the leak from the data, removes it
+per cell, and only then tests.
+
+## A simulated tissue
+
+```{r}
+library(edgeicg)
+sim <- simulate_edgeicg(n = 2500, G = 100, seed = 7, gamma = 1.2)
+dim(sim$counts)
+table(sim$types)
+```
+
+`sim$truth` lists the planted effects.
+
+## Fit
+
+On real data, pass:
+
+- the library size over **all** genes as `lib`;
+- the touching-cell graph from the cell outlines as `spill_edges` (see `contact_from_polygons()`).
+
+Without `spill_edges`, the kNN contact graph is used.
+
+```{r}
+fit <- edgeicg(sim$counts, sim$coords, sim$types, min_shift = 150, B = 8, verbose = FALSE)
+fit
+```
+
+`min_shift` and `B` set the spatial calibration of the niche scale: `B` toroidal shifts of at least `min_shift`
+µm. The defaults (450 µm, 30 shifts) are meant for whole sections. This simulated tissue is small, so the example
+uses smaller values.
+
+## Results
+
+`edgeicg_results()` returns one row per test with q below a threshold. `edgeicg_classify()` then sorts the hits
+into interpretable classes, for example whether the gene is a marker of the sender, a sign of leftover leakage.
+
+```{r}
+res <- edgeicg_results(fit, q_thr = 0.05)
+head(res)
+table(res$scale)
+hits <- edgeicg_classify(fit, res)
+table(hits$class)
+```
+
+The niche scale runs as a calibrated screen followed by attribution. For each screen hit, `fit$attribution`
+gives every candidate sender's posterior probability (`pip`), its share `alpha` among single-sender models, and
+whether it belongs to the credible set.
+
+```{r}
+nrow(fit$attribution)            # this small simulation has no niche-screen hits
+head(fit$attribution[order(-pip)])
+```
+
+## Large data
+
+Every statistic in the model is a sum over cells, so the engine computes partial sums and adds them up. Several
+arguments control how:
+
+- **Gene blocks** (`block_genes`) bound memory for in-memory counts.
+- **Workers** (`workers`): `mirai` daemons. Results are identical with and without them.
+- **Cell windows** (`window_cells`): the cells are visited in spatially ordered windows, so memory no longer
+  grows with the section.
+- **Counts on disk:** pass a GiottoDisk expression store as `counts`, or wrap it with
+  `counts_provider_store()`. Each worker then reads its own windows from a copy baked once in window order.
+- **Rust kernels:** with the edgeicgrs package installed, `backend = "auto"` computes the matrix products in
+  Rust.
+
+The windowed run below gives the same results as the single-window fit above:
+
+```{r}
+fit_w <- edgeicg(sim$counts, sim$coords, sim$types, min_shift = 150, B = 8, window_cells = 700, verbose = FALSE)
+fit_w$n_windows
+all.equal(fit_w$scale_fits$contact$z, fit$scale_fits$contact$z)
+```
+
+From Giotto, the same analysis is `findInteractionChangedFeats(g, cluster_column = ..., method = "edgeicg")`.

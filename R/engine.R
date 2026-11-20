@@ -224,6 +224,9 @@
       }
     }
     Att <- data.table::rbindlist(att)
+    if (!nrow(Att)) Att <- data.table::data.table(receiver = integer(), sender = integer(), gene = character(),
+      z_marg = numeric(), q_marg = numeric(), z_cond = numeric(), pip = numeric(), alpha = numeric(), p_two = numeric(),
+      in_cs = logical(), cs_size = integer())
     if (nrow(Att)) {
       data.table::setorder(Att, receiver, gene, -alpha)
       Att[, `:=`(in_cs = (cumsum(alpha) - alpha) < cs_level, cs_size = sum((cumsum(alpha) - alpha) < cs_level)), by = list(receiver, gene)]
