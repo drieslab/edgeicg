@@ -12,8 +12,10 @@ edgeicg(
   spill_edges = NULL,
   ex = NULL,
   block_genes = 500L,
+  window_cells = NULL,
   workers = 0L,
-  backend = c("auto", "r"),
+  backend = c("auto", "rust", "r"),
+  threads = NULL,
   calibrate = TRUE,
   calib_cond = TRUE,
   attribute = TRUE,
@@ -31,8 +33,9 @@ edgeicg(
 )
 }
 \arguments{
-\item{counts}{raw counts, genes x cells (\code{dgCMatrix} or dense), or a provider from \code{\link[=counts_provider]{counts_provider()}} /
-\code{\link[=counts_provider_store]{counts_provider_store()}}. Only the genes to test; the library size comes from \code{lib}.}
+\item{counts}{raw counts, genes x cells: a \code{dgCMatrix} or dense matrix, a GiottoDisk expression store, or a
+provider from \code{\link[=counts_provider]{counts_provider()}} / \code{\link[=counts_provider_store]{counts_provider_store()}}. Only the genes to test; the library size
+comes from \code{lib}.}
 
 \item{coords}{n x 2 cell centroids (microns), in the provider's cell order.}
 
@@ -45,11 +48,22 @@ edgeicg(
 
 \item{ex}{optional exposures from \code{\link[=edgeicg_exposures]{edgeicg_exposures()}} (computed if NULL).}
 
-\item{block_genes}{genes per block (memory: about cells x block_genes x 8 bytes per copy).}
+\item{block_genes}{genes per block (memory: about cells of a type x block_genes x 8 bytes per copy).}
 
-\item{workers}{number of mirai daemons for the gene blocks (0 = sequential). Results are identical.}
+\item{window_cells}{cells per window. With more cells than this, cells are visited in spatially ordered windows
+(each with the halo of touching neighbours the leak correction needs) and every statistic is accumulated as a
+sum over windows, so memory no longer grows with the section. \code{NULL} (default): one window for in-memory
+counts; for a store, one window per worker, at most \code{getOption("edgeicg.window_cells", 50000)} cells (the
+store is then read once per sweep, in contiguous cell ranges). Results equal the one-window run up to
+rounding.}
 
-\item{backend}{\code{"auto"} or \code{"r"}. Reserved for a compiled backend; currently always R.}
+\item{workers}{number of mirai daemons (0 = sequential). One window: tasks are gene blocks; several windows:
+tasks are bands of windows. Results are identical.}
+
+\item{backend}{\code{"auto"} (Rust kernels from the edgeicgrs package when installed, else R), \code{"rust"} or \code{"r"}.
+The Rust kernels are the matrix cross-products of the sweeps, the hotspot of the method.}
+
+\item{threads}{threads per process for the Rust kernels (default: 1 with workers, all cores without).}
 
 \item{calibrate}{run the toroidal-shift calibration of the niche scale (recommended).}
 

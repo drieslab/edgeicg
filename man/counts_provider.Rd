@@ -10,7 +10,8 @@ counts_provider(counts)
 counts_provider_store(store, genes, cells)
 }
 \arguments{
-\item{counts}{genes x cells matrix (\code{dgCMatrix} or dense), or an existing provider (returned as is).}
+\item{counts}{genes x cells matrix (\code{dgCMatrix} or dense), a GiottoDisk expression store (wrapped with
+\code{counts_provider_store()} for all its genes and cells), or an existing provider (returned as is).}
 
 \item{store}{a GiottoDisk expression store (genes x cells), e.g.
 \code{GiottoClass::getExpression(g, values = "raw", output = "exprObj")[]}.}
@@ -23,8 +24,25 @@ counts_provider_store(store, genes, cells)
 a provider list.
 }
 \description{
-EdgeICG reads raw counts only in gene blocks. A provider is a list with \code{genes} (character) and
-\code{read(gene_index)}, which returns a cells x genes numeric matrix of raw counts for those genes, with cells
-in the analysis order. \code{counts_provider()} wraps an in-memory genes x cells matrix (sparse or dense);
-\code{counts_provider_store()} wraps a GiottoDisk expression store, so whole sections never sit in memory.
+EdgeICG reads raw counts only in blocks. A provider is a list with
+\itemize{
+\item \code{genes} (character) and \code{n_cells};
+\item \code{rows(lo, hi, gi)}: raw counts of cells \code{lo:hi} (in the provider's current cell order) for genes \code{gi}, as a
+cells x genes matrix (sparse \code{dgCMatrix} preferred; dense is accepted);
+\item \code{order(ord)}: a provider whose cell \code{i} is this provider's cell \code{ord[i]}. The engine visits cells in
+spatially ordered windows (see \code{window_cells} in \code{\link[=edgeicg]{edgeicg()}}) and asks the provider for that order once;
+\item \code{cleanup()}: removes anything \code{order()} created;
+\item optionally \code{slice(lo, hi, gi)}: the same block as a compact genes x cells matrix, for providers whose data
+live in memory (the block is sent to the worker with its task);
+\item \code{read(gi)}: all cells for genes \code{gi} (cells x genes), kept for direct use.
+}
+}
+\details{
+\code{counts_provider()} wraps an in-memory genes x cells matrix (sparse or dense). \code{counts_provider_store()} wraps a
+GiottoDisk expression store, so whole sections never sit in memory: workers read their own windows from it.
+
+For windowed runs, \code{order()} bakes the analysis genes into a temporary store in the engine's cell order
+(\code{GiottoDisk::storeWrite()} of the view, the step GiottoDisk's streaming PCA uses to narrow a store). The
+expression store is sorted by cell, so a window and its halo are then a contiguous row range that prunes
+parquet row groups, and only the analysis genes are scanned. The temporary store is removed by \code{cleanup()}.
 }

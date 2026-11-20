@@ -4,17 +4,27 @@
 #' exposure to the sender at contact, paracrine and niche scale, after removing transcripts leaked from
 #' touching neighbours. See the package description for the model.
 #'
-#' @param counts raw counts, genes x cells (`dgCMatrix` or dense), or a provider from [counts_provider()] /
-#'   [counts_provider_store()]. Only the genes to test; the library size comes from `lib`.
+#' @param counts raw counts, genes x cells: a `dgCMatrix` or dense matrix, a GiottoDisk expression store, or a
+#'   provider from [counts_provider()] / [counts_provider_store()]. Only the genes to test; the library size
+#'   comes from `lib`.
 #' @param coords n x 2 cell centroids (microns), in the provider's cell order.
 #' @param types cell-type labels (character or factor), one per cell.
 #' @param lib library size per cell over **all** genes (default: column sums of `counts` if it is a matrix).
 #' @param spill_edges optional touching-cell edge list (`recv`, `send`, `w`), e.g. from
 #'   [contact_from_polygons()]; the spillover graph. Default: the kNN contact graph.
 #' @param ex optional exposures from [edgeicg_exposures()] (computed if NULL).
-#' @param block_genes genes per block (memory: about cells x block_genes x 8 bytes per copy).
-#' @param workers number of mirai daemons for the gene blocks (0 = sequential). Results are identical.
-#' @param backend `"auto"` or `"r"`. Reserved for a compiled backend; currently always R.
+#' @param block_genes genes per block (memory: about cells of a type x block_genes x 8 bytes per copy).
+#' @param window_cells cells per window. With more cells than this, cells are visited in spatially ordered windows
+#'   (each with the halo of touching neighbours the leak correction needs) and every statistic is accumulated as a
+#'   sum over windows, so memory no longer grows with the section. `NULL` (default): one window for in-memory
+#'   counts; for a store, one window per worker, at most `getOption("edgeicg.window_cells", 50000)` cells (the
+#'   store is then read once per sweep, in contiguous cell ranges). Results equal the one-window run up to
+#'   rounding.
+#' @param workers number of mirai daemons (0 = sequential). One window: tasks are gene blocks; several windows:
+#'   tasks are bands of windows. Results are identical.
+#' @param backend `"auto"` (Rust kernels from the edgeicgrs package when installed, else R), `"rust"` or `"r"`.
+#'   The Rust kernels are the matrix cross-products of the sweeps, the hotspot of the method.
+#' @param threads threads per process for the Rust kernels (default: 1 with workers, all cores without).
 #' @param calibrate run the toroidal-shift calibration of the niche scale (recommended).
 #' @param calib_cond also calibrate the conditional (all-sender) niche z (secondary output).
 #' @param attribute attribute niche screen hits to senders.
@@ -32,10 +42,14 @@
 #' @return an `EdgeICG` object; see [edgeicg_results()].
 #' @export
 edgeicg <- function(counts, coords, types, lib = NULL, spill_edges = NULL, ex = NULL, block_genes = 500L,
-                    workers = 0L, backend = c("auto", "r"), calibrate = TRUE, calib_cond = TRUE, attribute = TRUE,
+                    window_cells = NULL, workers = 0L, backend = c("auto", "rust", "r"), threads = NULL, calibrate = TRUE, calib_cond = TRUE, attribute = TRUE,
                     B = 30L, min_shift = 450, q_thr = 0.05, min_cells = 60L, min_det = 0.01, min_exposed = 30L,
                     exposed_at = 0.1, drop_degenerate = TRUE, seed = 1L, verbose = TRUE, ...) {
   backend <- match.arg(backend)
+  has_rs <- requireNamespace("edgeicgrs", quietly = TRUE)
+  if (backend == "rust" && !has_rs) stop("backend = 'rust' needs the edgeicgrs package")
+  backend <- if (backend == "r" || !has_rs) "r" else "rust"
+  if (is.null(threads)) threads <- if (workers > 0) 1L else 0L
   dots <- list(...)
   opt <- function(nm, def) if (is.null(dots[[nm]])) def else dots[[nm]]
   pv <- counts_provider(counts)
@@ -46,19 +60,23 @@ edgeicg <- function(counts, coords, types, lib = NULL, spill_edges = NULL, ex = 
   if (nrow(coords) != n) stop("coords and types differ in length")
   if (!is.null(pv$n_cells) && pv$n_cells != n) stop("counts and types differ in the number of cells")
   if (is.null(lib)) {
-    if (is.list(counts)) stop("lib is required with a provider")
+    if (!is.matrix(counts) && !inherits(counts, "Matrix")) stop("lib is required unless counts is a matrix")
     lib <- Matrix::colSums(counts)
   }
   K <- length(lev)
+  if (is.null(window_cells)) window_cells <- if (identical(pv$kind, "memory")) Inf else            # a store is read
+    min(getOption("edgeicg.window_cells", 50000), ceiling(n / max(1L, workers)))                    # once per sweep
   if (is.null(ex)) ex <- edgeicg_exposures(coords, tcode, K, k = opt("k", 8), sigma_p = opt("sigma_p", 25),
                                            sigma_n = opt("sigma_n", 150), bin = opt("bin", 10))
   if (calibrate && is.null(ex$fields)) stop("ex has no niche fields; build it with edgeicg_exposures()")
-  r <- .edgeicg_engine(pv, coords, tcode, lib, ex, spill_edges, block_genes, min_cells, min_det, min_exposed,
-                       exposed_at, opt("huber", 1.345), opt("scale", 100), calibrate, B, min_shift, seed,
+  r <- .edgeicg_engine(pv, coords, tcode, lib, ex, spill_edges, block_genes, window_cells, min_cells, min_det,
+                       min_exposed, exposed_at, opt("huber", 1.345), opt("scale", 100), calibrate, B, min_shift, seed,
                        calib_cond, attribute, q_thr, opt("max_size", 2), opt("prior_sd", c(0.05, 0.1, 0.2)),
-                       opt("cs_level", 0.95), as.integer(workers), drop_degenerate, verbose)
+                       opt("cs_level", 0.95), as.integer(workers), .edgeicg_xp(backend, as.integer(threads)),
+                       drop_degenerate, verbose)
   r$types <- lev; r$n_cells <- n; r$type_n <- tabulate(tcode, K)
-  r$settings <- list(block_genes = block_genes, workers = workers, backend = "r", calibrate = calibrate,
+  r$settings <- list(block_genes = block_genes, window_cells = window_cells, workers = workers, backend = backend,
+                     threads = threads, calibrate = calibrate,
                      calib_cond = calib_cond, B = B, min_shift = min_shift, q_thr = q_thr, exposures = ex$settings,
                      spill = if (is.null(spill_edges)) "knn" else "custom")
   structure(r, class = "EdgeICG")
@@ -107,3 +125,11 @@ print.EdgeICG <- function(x, ...) {
 # Note on the response scale: effects are on the composition scale (counts / library). When a receiver strongly
 # up-regulates highly expressed genes, the shares of its other genes fall slightly; these compositional
 # shifts are real on this scale and show up as small negative effects, mostly in small panels.
+
+# Dense product kernels of the sweeps: xp = t(A) %*% B, mp = A %*% B (A may be a vector). The Rust versions
+# (edgeicgrs) are an optimised matrix multiply that does not depend on the BLAS R is linked to.
+.edgeicg_xp <- function(backend, threads) {
+  if (backend == "r") return(list(xp = function(A, B) crossprod(A, B), mp = function(A, B) A %*% B))
+  force(threads)
+  list(xp = function(A, B) edgeicgrs::crossprod_rs(A, B, threads), mp = function(A, B) edgeicgrs::matprod_rs(A, B, threads))
+}

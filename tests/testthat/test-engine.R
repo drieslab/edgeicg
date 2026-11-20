@@ -35,3 +35,22 @@ test_that("without effects, contact and paracrine calls are rare (leakage remove
     expect_lt(mean(abs(z) > 3, na.rm = TRUE), 0.01)
   }
 })
+
+test_that("windowed runs (cell streaming) equal the one-window run", {
+  sim <- simulate_edgeicg(n = 3000, G = 100, seed = 7, gamma = 1.2)
+  run <- function(wc, w) edgeicg(sim$counts, sim$coords, sim$types, min_shift = 150, B = 8, block_genes = 40,
+                                 window_cells = wc, workers = w, backend = "r", verbose = FALSE)
+  one <- run(Inf, 0)
+  expect_equal(one$n_windows, 1L)
+  runs <- list(run(700, 0))
+  if (requireNamespace("mirai", quietly = TRUE)) runs <- c(runs, list(run(700, 2)))
+  for (f in runs) {
+    expect_gt(f$n_windows, 3L)
+    expect_equal(f$pairs$lambda, one$pairs$lambda, tolerance = 1e-8)
+    for (s in c("contact", "paracrine", "niche")) expect_equal(f$scale_fits[[s]]$z, one$scale_fits[[s]]$z, tolerance = 1e-8)
+    expect_equal(f$screen$z, one$screen$z, tolerance = 1e-8)
+    expect_equal(f$cond$z, one$cond$z, tolerance = 1e-8)
+    expect_equal(f$calibration$raw_marg, one$calibration$raw_marg, tolerance = 1e-8)
+    expect_equal(f$attribution$alpha, one$attribution$alpha, tolerance = 1e-8)
+  }
+})
