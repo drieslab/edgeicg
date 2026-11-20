@@ -16,7 +16,7 @@
 
 .edgeicg_engine <- function(pv, coords, types, lib, ex, spill_edges, block_genes, window_cells, min_cells, min_det,
                             min_exposed, exposed_at, huber, scale, calibrate, B, min_shift, seed, calib_cond, attribute,
-                            q_thr, max_size, prior_sd, cs_level, workers, xp, drop_degenerate, verbose) {
+                            q_thr, max_size, prior_sd, cs_level, workers, xp, drop_degenerate, prefilter, verbose) {
   t0 <- proc.time()[[3]]; tm <- c()
   S <- .edgeicg_setup(pv, coords, types, lib, ex, spill_edges, block_genes, window_cells, min_cells, scale, calibrate,
                       B, min_shift, seed, calib_cond, drop_degenerate, verbose, t0)
@@ -34,6 +34,23 @@
   run <- .edgeicg_runner(workers, st)
   on.exit(run$close(), add = TRUE)
   do_sweep <- function(name, groups, extra = NULL) .edgeicg_sweep(run, st, win, bands, name, groups, extra, workers)
+  # pass 0 (prefilter): genes detected in fewer than min_det of the cells of every receiver type have no testable
+  # entry; they are dropped before the fit (they would only enter the lambda / mu regression across genes)
+  n_prefiltered <- 0L
+  if (prefilter) {
+    R0 <- do_sweep("p0", blocks)
+    det0 <- matrix(0, K, G); for (k in seq_along(blocks)) det0[, blocks[[k]]] <- R0[[k]]$detn
+    rm(R0)
+    keep <- which(colSums(det0[fitted, , drop = FALSE] / pmax(tabulate(types, K)[fitted], 1) >= min_det) > 0)
+    if (!length(keep)) stop("no gene is detected in at least min_det of the cells of any receiver type")
+    n_prefiltered <- G - length(keep)
+    if (n_prefiltered > 0) {
+      st$pv <- st$pv$narrow(keep); genes <- genes[keep]; G <- length(keep)
+      blocks <- unname(split(seq_len(G), ceiling(seq_len(G) / block_genes)))
+      if (workers < 1 || !is.function(st$pv$slice)) run$set(list(pv = st$pv))
+    }
+    .say(verbose, t0, "prefilter: %d of %d genes kept (detected in >= %.3g of a receiver type)", G, G + n_prefiltered, min_det)
+  }
   per_type <- function(R, f) lapply(R, function(r) lapply(seq_len(K), function(t) if (!is.null(r$t[[t]])) f(dz[[t]], r$t[[t]])))
 
   # pass 1
@@ -217,7 +234,7 @@
   type_mean <- tsum / pmax(nt, 1)                                     # mean composition (per 100) by type
   list(genes = genes, K = K, pairs = pairs, fitted = fitted, a = a, type_mean = type_mean, det = det_t,
        scale_fits = fits, omni = omni, omni_q = omni_q, screen = screen, cond = cond, attribution = Att,
-       calibration = cal, timing = tm, n_dropped = n_dropped, n_windows = nrow(win$w))
+       calibration = cal, timing = tm, n_dropped = n_dropped, n_prefiltered = n_prefiltered, n_windows = nrow(win$w))
 }
 
 # One sweep: tasks, run, sums reduced per gene group. With one window each task is one gene group (parallel over

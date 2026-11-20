@@ -54,3 +54,23 @@ test_that("windowed runs (cell streaming) equal the one-window run", {
     expect_equal(f$attribution$alpha, one$attribution$alpha, tolerance = 1e-8)
   }
 })
+
+test_that("the prefilter drops only genes without a testable entry", {
+  sim <- simulate_edgeicg(n = 2500, G = 100, seed = 7, gamma = 1.2)
+  dead <- Matrix::Matrix(0, 20, ncol(sim$counts), sparse = TRUE,
+                         dimnames = list(paste0("dead", 1:20), colnames(sim$counts)))
+  dead[, 1:3] <- 1                                                   # detected in 3 cells only
+  counts <- rbind(sim$counts, dead); lib <- Matrix::colSums(counts)
+  run <- function(pf, wc = Inf) edgeicg(counts, sim$coords, sim$types, lib = lib, min_shift = 150, B = 8,
+                                       block_genes = 40, window_cells = wc, prefilter = pf, backend = "r", verbose = FALSE)
+  on <- run(TRUE); off <- run(FALSE)
+  expect_equal(on$n_prefiltered, 20L)
+  expect_identical(on$genes, rownames(sim$counts))
+  expect_true(all(is.na(off$scale_fits$contact$z[, 101:120])))
+  # kept genes: the same tests, up to the leak (lambda / mu) fit across genes, which the dropped all-zero genes
+  # pulled towards zero
+  expect_gt(cor(as.vector(on$scale_fits$contact$z), as.vector(off$scale_fits$contact$z[, 1:100]),
+                use = "complete.obs"), 0.995)
+  win <- run(TRUE, 700)
+  expect_equal(win$scale_fits$contact$z, on$scale_fits$contact$z, tolerance = 1e-8)
+})

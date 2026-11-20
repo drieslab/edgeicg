@@ -28,10 +28,11 @@
 
 # Window context. With one window the type arrays are used as they are (no copies).
 .ctx_build <- function(st, wi, sweep) {
-  halo <- .sweep_pass(sweep) != "p1"
+  halo <- .sweep_pass(sweep) %in% c("p2", "p3")
   r0 <- if (halo) wi$rlo else wi$lo; r1 <- if (halo) wi$rhi else wi$hi
   read_cells <- if (is.null(st$ord)) r0:r1 else st$ord[r0:r1]
   core <- if (is.null(st$ord)) wi$lo:wi$hi else st$ord[wi$lo:wi$hi]
+  if (.sweep_pass(sweep) == "p0") return(list(xc = (wi$lo:wi$hi) - r0 + 1L, ctype = st$types[core]))
   fields <- .sweep_fields(sweep)
   types <- lapply(seq_len(st$K), function(t) {
     z <- st$dz[[t]]; wt <- st$wtypes[[wi$w]][[t]]
@@ -71,7 +72,7 @@
 # One task: windows of a band x gene groups. Each window is read once for the union of the groups' genes.
 .edgeicg_task <- function(task, st, sweep) {
   ug <- sort(unique(unlist(task$groups)))
-  halo <- .sweep_pass(sweep) != "p1"
+  halo <- .sweep_pass(sweep) %in% c("p2", "p3")
   out <- vector("list", length(task$groups))
   for (wi in task$wins) {
     ctx <- if (is.null(wi$ctx)) .ctx_build(st, wi, sweep) else wi$ctx
@@ -80,6 +81,7 @@
       gi <- task$groups[[k]]
       X <- if (length(gi) == length(ug)) Xr else Xr[, match(gi, ug), drop = FALSE]
       r <- switch(.sweep_pass(sweep),
+                  p0 = .k_p0(st, ctx, X),
                   p1 = .k_p1(st, ctx, X, gi, .sweep_part(sweep), task$extra[[k]]),
                   p2 = .k_p2(st, ctx, X, gi, .sweep_part(sweep), task$extra[[k]]),
                   p3 = .k_p3(st, ctx, X, gi, task$extra[[k]]))
@@ -96,6 +98,13 @@
   if (is.null(b)) return(a)
   if (is.list(a)) { for (k in seq_along(b)) a[k] <- list(.acc_add(a[[k]], b[[k]])); return(a) }
   a + b
+}
+
+# ---------------------------------------------------------------- pass 0: detection per receiver type (prefilter)
+.k_p0 <- function(st, ctx, X) {
+  Xd <- X[ctx$xc, , drop = FALSE]; Xd@x <- as.numeric(Xd@x > 0)
+  Ind <- Matrix::sparseMatrix(i = ctx$ctype, j = seq_along(ctx$ctype), x = 1, dims = c(st$K, length(ctx$ctype)))
+  list(detn = as.matrix(Ind %*% Xd))
 }
 
 # ---------------------------------------------------------------- pass 1: stage-1 fit

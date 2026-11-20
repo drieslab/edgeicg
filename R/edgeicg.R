@@ -35,6 +35,9 @@
 #'   above `exposed_at`.
 #' @param drop_degenerate drop exposure columns without variance within a receiver type (their tests are NA).
 #'   FALSE reproduces the 2026 prototype exactly.
+#' @param prefilter drop genes detected in fewer than `min_det` of the cells of every receiver type before the
+#'   fit (one cheap detection pass). Such genes have no testable entry; without the prefilter they still enter
+#'   the regression of the leak coefficients across genes. FALSE reproduces the 2026 prototype exactly.
 #' @param seed seed of the calibration shifts.
 #' @param verbose progress messages.
 #' @param ... further engine settings: `huber`, `scale`, `max_size`, `prior_sd`, `cs_level`, `k`, `sigma_p`,
@@ -44,7 +47,7 @@
 edgeicg <- function(counts, coords, types, lib = NULL, spill_edges = NULL, ex = NULL, block_genes = 500L,
                     window_cells = NULL, workers = 0L, backend = c("auto", "rust", "r"), threads = NULL, calibrate = TRUE, calib_cond = TRUE, attribute = TRUE,
                     B = 30L, min_shift = 450, q_thr = 0.05, min_cells = 60L, min_det = 0.01, min_exposed = 30L,
-                    exposed_at = 0.1, drop_degenerate = TRUE, seed = 1L, verbose = TRUE, ...) {
+                    exposed_at = 0.1, drop_degenerate = TRUE, prefilter = TRUE, seed = 1L, verbose = TRUE, ...) {
   backend <- match.arg(backend)
   has_rs <- requireNamespace("edgeicgrs", quietly = TRUE)
   if (backend == "rust" && !has_rs) stop("backend = 'rust' needs the edgeicgrs package")
@@ -73,7 +76,7 @@ edgeicg <- function(counts, coords, types, lib = NULL, spill_edges = NULL, ex = 
                        min_exposed, exposed_at, opt("huber", 1.345), opt("scale", 100), calibrate, B, min_shift, seed,
                        calib_cond, attribute, q_thr, opt("max_size", 2), opt("prior_sd", c(0.05, 0.1, 0.2)),
                        opt("cs_level", 0.95), as.integer(workers), .edgeicg_xp(backend, as.integer(threads)),
-                       drop_degenerate, verbose)
+                       drop_degenerate, prefilter, verbose)
   r$types <- lev; r$n_cells <- n; r$type_n <- tabulate(tcode, K)
   r$settings <- list(block_genes = block_genes, window_cells = window_cells, workers = workers, backend = backend,
                      threads = threads, calibrate = calibrate,

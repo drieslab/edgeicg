@@ -7,6 +7,7 @@
 #' * `order(ord)`: a provider whose cell `i` is this provider's cell `ord[i]`. The engine visits cells in
 #'   spatially ordered windows (see `window_cells` in [edgeicg()]) and asks the provider for that order once;
 #' * `cleanup()`: removes anything `order()` created;
+#' * `narrow(gi)`: a provider for genes `gi` only (used by the gene prefilter);
 #' * optionally `slice(lo, hi, gi)`: the same block as a compact genes x cells matrix, for providers whose data
 #'   live in memory (the block is sent to the worker with its task);
 #' * `read(gi)`: all cells for genes `gi` (cells x genes), kept for direct use.
@@ -34,6 +35,7 @@ counts_provider <- function(counts) {
        rows = function(lo, hi, gi) Matrix::t(blk(lo, hi, gi)),
        slice = blk,
        order = function(ord) .provider_memory(counts, if (is.null(perm)) ord else perm[ord]),
+       narrow = function(gi) .provider_memory(counts[gi, , drop = FALSE], perm),
        cleanup = function() invisible(),
        read = function(gi) Matrix::t(methods::as(counts[gi, , drop = FALSE], "CsparseMatrix")))
 }
@@ -62,6 +64,7 @@ counts_provider_store <- function(store, genes, cells) {
          baked <- GiottoDisk::storeWrite(GiottoDisk::parquetExprStore(path = path), store[genes, cells[ord]])
          .provider_baked(baked, genes, path)
        },
+       narrow = function(gi) counts_provider_store(store, genes[gi], cells),
        cleanup = function() invisible(),
        read = function(gi) get(store[genes[gi], cells])[cells, genes[gi], drop = FALSE])
 }
@@ -79,6 +82,12 @@ counts_provider_store <- function(store, genes, cells) {
          m[, genes[gi], drop = FALSE]
        },
        order = function(ord) stop("a baked store is already ordered"),
+       narrow = function(gi) {                                       # re-bake with the kept genes only
+         p2 <- tempfile("edgeicg_bake_", fileext = ".parquet")
+         b2 <- GiottoDisk::storeWrite(GiottoDisk::parquetExprStore(path = p2), baked[gi, ])
+         unlink(path, recursive = TRUE)
+         .provider_baked(b2, genes[gi], p2)
+       },
        cleanup = function() unlink(path, recursive = TRUE),
        read = function(gi) stop("read() is not available on a baked store; use rows()"))
 }
