@@ -20,7 +20,9 @@
   t0 <- proc.time()[[3]]; tm <- c()
   S <- .edgeicg_setup(pv, coords, types, lib, ex, spill_edges, block_genes, window_cells, min_cells, scale, calibrate,
                       B, min_shift, seed, calib_cond, drop_degenerate, verbose, t0)
-  list2env(S, environment())                                        # genes, G, n, K, tested, blocks, win, st, ...
+  genes <- S$genes; G <- S$G; n <- S$n; K <- S$K; tested <- S$tested; blocks <- S$blocks; sh <- S$sh
+  ct <- S$ct; wn <- S$wn; tr <- S$tr; ts <- S$ts; het <- S$het; smat <- S$smat; dz <- S$dz; pairs <- S$pairs
+  fitted <- S$fitted; P_n <- S$P_n; n_dropped <- S$n_dropped; sw_p <- S$sw_p; win <- S$win; st <- S$st
   rm(S)
   st$xp <- xp$xp; st$mp <- xp$mp
   bands <- .edgeicg_bands(nrow(win$w), workers)

@@ -38,8 +38,11 @@
   closed <- FALSE
   push <- function(obj, name) {
     f <- tempfile(fileext = ".rds"); saveRDS(obj, f)
-    mirai::everywhere({ x <- readRDS(f); if (nm == "st") .edgeicg_st <<- x else .edgeicg_st[names(x)] <<- x; TRUE },
-                      f = f, nm = name)[]
+    mirai::everywhere({                                              # runs on each daemon
+      x <- readRDS(f); ge <- globalenv()
+      if (nm != "st") { s <- get(".edgeicg_st", envir = ge); s[names(x)] <- x; x <- s }
+      assign(".edgeicg_st", x, envir = ge); TRUE
+    }, f = f, nm = name)[]
     unlink(f)
   }
   mirai::everywhere({ Sys.setenv(OMP_NUM_THREADS = "1", VECLIB_MAXIMUM_THREADS = "1", OPENBLAS_NUM_THREADS = "1")
