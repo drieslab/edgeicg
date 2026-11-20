@@ -1,8 +1,8 @@
 #' Counts providers
 #'
 #' EdgeICG reads raw counts only in gene blocks. A provider is a list with `genes` (character) and
-#' `read(gene_index)`, which returns a cells x genes numeric matrix of raw counts for those genes, with cells
-#' in the analysis order. `counts_provider()` wraps an in-memory genes x cells matrix (sparse or dense);
+#' `read(gene_index)`, which returns a cells x genes matrix of raw counts for those genes (sparse `dgCMatrix`
+#' preferred; dense is accepted), with cells in the analysis order. `counts_provider()` wraps an in-memory genes x cells matrix (sparse or dense);
 #' `counts_provider_store()` wraps a GiottoDisk expression store, so whole sections never sit in memory.
 #'
 #' @param counts genes x cells matrix (`dgCMatrix` or dense), or an existing provider (returned as is).
@@ -13,7 +13,7 @@ counts_provider <- function(counts) {
   if (is.null(rownames(counts))) stop("counts needs gene names as row names")
   force(counts)
   list(genes = rownames(counts), n_cells = ncol(counts), kind = "memory",
-       read = function(gi) as.matrix(Matrix::t(counts[gi, , drop = FALSE])),
+       read = function(gi) Matrix::t(methods::as(counts[gi, , drop = FALSE], "CsparseMatrix")),
        slice = function(gi) counts[gi, , drop = FALSE])               # compact block, shipped to daemons
 }
 
@@ -29,6 +29,6 @@ counts_provider_store <- function(store, genes, cells) {
   list(genes = genes, n_cells = length(cells), kind = "store",
        read = function(gi) {
          m <- GiottoDisk::storeRead(store[genes[gi], cells], output = "dgcmatrix", max_rows = Inf, max_cols = Inf)
-         as.matrix(Matrix::t(m[genes[gi], cells, drop = FALSE]))
+         Matrix::t(m[genes[gi], cells, drop = FALSE])
        })
 }

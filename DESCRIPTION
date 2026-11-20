@@ -14,7 +14,7 @@ Description: Tests whether a receiver cell type changes a gene's expression with
 License: MIT + file LICENSE
 Encoding: UTF-8
 Depends: R (>= 4.2)
-Imports: Matrix, data.table, RANN, stats, utils
+Imports: Matrix, data.table, methods, RANN, stats, utils
 Suggests: mirai, testthat (>= 3.0.0), GiottoDisk, arrow
 Config/testthat/edition: 3
 Roxygen: list(markdown = TRUE)
