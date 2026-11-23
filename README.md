@@ -42,6 +42,11 @@ For real data:
 - Pass touching-cell edges from the cell outlines with `contact_from_polygons()` as `spill_edges`.
 - Pass the library size over all genes as `lib`.
 
+## Effect sizes and confounding
+- **Effect size per test:** `lfc`, the log2 fold change between receivers at the 10th and 90th percentile of their exposure. By default, results need |lfc| ≥ 0.25 (`edgeicg_results(min_lfc = 0.25)`).
+- **Why a floor:** at whole-section power, significance alone also picks up small associations caused by zonation or by sub-states within a cell type. On the Atera kidney section the floor cut null-gene calls from 27% to 6% without losing planted effects. It is free: no refit.
+- **Spatial covariates (optional):** `covariates = spatial_basis(coords)`, usually with `covariate_scope = "niche"`. They adjust for smooth spatial trends and fix the niche-scale confounding (pseudo-null 4.7% → 0.6%) at about 1.4× the run time.
+
 ## Giotto
 `Giotto::findInteractionChangedFeats(g, cluster_column = ..., method = "edgeicg")` runs this engine on a giotto object. The expression can be in memory or GiottoDisk-backed.
 

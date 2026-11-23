@@ -72,8 +72,9 @@ within a receiver type are dropped (with \code{drop_degenerate}).}
 
 \item{covariate_scope}{\code{"all"} (default): covariates enter every test's design; \code{"niche"}: only the niche
 screen's base design (and its calibration). Large-scale spatial trends confound mainly the niche scale; on
-the Atera kidney section \code{spatial_basis()} brought the niche pseudo-null from 4.7\% to 0.7\% with or without the
-contact and paracrine designs, and \code{"niche"} costs less time.}
+the Atera kidney section \code{spatial_basis()} brought the niche pseudo-null from 4.7\% to 0.5-0.7\% with either
+scope, at about 1.4x the run time (df 4 or 6, either scope; the niche screen and its calibration dominate
+the extra cost). \code{"niche"} leaves the contact and paracrine results exactly as without covariates.}
 
 \item{workers}{number of mirai daemons (0 = sequential). One window: tasks are gene blocks; several windows:
 tasks are bands of windows. Results are identical.}

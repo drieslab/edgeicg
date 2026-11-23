@@ -31,8 +31,9 @@
 #'   within a receiver type are dropped (with `drop_degenerate`).
 #' @param covariate_scope `"all"` (default): covariates enter every test's design; `"niche"`: only the niche
 #'   screen's base design (and its calibration). Large-scale spatial trends confound mainly the niche scale; on
-#'   the Atera kidney section `spatial_basis()` brought the niche pseudo-null from 4.7% to 0.7% with or without the
-#'   contact and paracrine designs, and `"niche"` costs less time.
+#'   the Atera kidney section `spatial_basis()` brought the niche pseudo-null from 4.7% to 0.5-0.7% with either
+#'   scope, at about 1.4x the run time (df 4 or 6, either scope; the niche screen and its calibration dominate
+#'   the extra cost). `"niche"` leaves the contact and paracrine results exactly as without covariates.
 #' @param panel_genes with several windows, genes are processed in panels of at most this many (each a separately
 #'   baked store when counts are on disk), which bounds the memory of the partial sums; every count is still read
 #'   once per pass. Default 3000.
