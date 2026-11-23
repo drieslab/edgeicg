@@ -17,10 +17,10 @@
 .edgeicg_engine <- function(pv, coords, types, lib, ex, spill_edges, block_genes, window_cells, min_cells, min_det,
                             min_exposed, exposed_at, huber, scale, calibrate, B, min_shift, seed, calib_cond, attribute,
                             q_thr, max_size, prior_sd, cs_level, workers, xp, drop_degenerate, prefilter, panel_genes,
-                            verbose, covariates = NULL) {
+                            verbose, covariates = NULL, covariate_scope = "all") {
   t0 <- proc.time()[[3]]; tm <- c()
   S <- .edgeicg_setup(pv, coords, types, lib, ex, spill_edges, block_genes, window_cells, min_cells, scale, calibrate,
-                      B, min_shift, seed, calib_cond, drop_degenerate, verbose, t0, covariates)
+                      B, min_shift, seed, calib_cond, drop_degenerate, verbose, t0, covariates, covariate_scope)
   genes <- S$genes; G <- S$G; n <- S$n; K <- S$K; tested <- S$tested; blocks <- S$blocks; sh <- S$sh
   ct <- S$ct; wn <- S$wn; tr <- S$tr; ts <- S$ts; het <- S$het; smat <- S$smat; dz <- S$dz; pairs <- S$pairs
   fitted <- S$fitted; P_n <- S$P_n; n_dropped <- S$n_dropped; sw_p <- S$sw_p; win <- S$win; st <- S$st
@@ -263,6 +263,16 @@
   }
   run$close()
   type_mean <- tsum / pmax(nt, 1)                                     # mean composition (per 100) by type
+  # effect size per test: log2 fold change between receivers at the 10th and 90th percentile of their exposure
+  # to the sender (effect x exposure range, relative to the receiver type's mean composition of the gene)
+  tmr <- type_mean[pairs$receiver, , drop = FALSE]
+  for (s in tested) {
+    dx <- mapply(function(t, kk) diff(stats::quantile(smat[[s]][types == t, kk], c(0.1, 0.9), names = FALSE)),
+                 pairs$receiver, pairs$sender)
+    pairs[[paste0("dx_", s)]] <- dx
+    fits[[s]]$lfc <- log2(pmax(1 + fits[[s]]$effect * dx / pmax(tmr, 1e-9), 1e-3))
+  }
+  screen$lfc <- log2(pmax(1 + screen$effect * pairs$dx_niche / pmax(tmr, 1e-9), 1e-3))
   list(genes = genes, K = K, pairs = pairs, fitted = fitted, a = a, type_mean = type_mean, det = det_t,
        scale_fits = fits, omni = omni, omni_q = omni_q, screen = screen, cond = cond, attribution = Att,
        calibration = cal, timing = tm, n_dropped = n_dropped, n_prefiltered = n_prefiltered, n_windows = nrow(win$w))
@@ -302,7 +312,7 @@
 # the touching-sender averaging matrix E. Returns the variables the engine uses, and st (the state the tasks need).
 .edgeicg_setup <- function(pv, coords, types, lib, ex, spill_edges, block_genes, window_cells, min_cells, scale,
                            calibrate, B, min_shift, seed, calib_cond, drop_degenerate, verbose, t0 = proc.time()[[3]],
-                           covariates = NULL) {
+                           covariates = NULL, covariate_scope = "all") {
   genes <- pv$genes; G <- length(genes); n <- length(types); K <- max(types)
   tested <- c("contact", "paracrine", "niche")
   blocks <- unname(split(seq_len(G), ceiling(seq_len(G) / block_genes)))
@@ -333,16 +343,21 @@
     others <- setdiff(seq_len(K), t)
     cols <- do.call(rbind, lapply(tested, function(s) data.frame(scale = s, k = others)))
     D <- do.call(cbind, lapply(tested, function(s) smat[[s]][idx, others, drop = FALSE]))
+    cvn <- NULL
     if (!is.null(covariates)) {                                      # adjusted for, not tested
       cv <- covariates[idx, , drop = FALSE]                           # centred within the type: the intercept stays
-      D <- cbind(D, sweep(cv, 2, colMeans(cv)))                       # the receiver baseline the leak model uses
-      cols <- rbind(cols, data.frame(scale = "covariate", k = NA_integer_)[rep(1L, ncol(covariates)), , drop = FALSE])
+      cv <- sweep(cv, 2, colMeans(cv))                                # the receiver baseline the leak model uses
+      cv <- cv[, apply(cv, 2, stats::var) > 1e-12, drop = FALSE]
+      if (covariate_scope == "all") {
+        D <- cbind(D, cv)
+        cols <- rbind(cols, data.frame(scale = "covariate", k = NA_integer_)[rep(1L, ncol(cv)), , drop = FALSE])
+      } else cvn <- cv                                                # niche screen only (see below)
     }
     if (drop_degenerate) {
       keep <- apply(D, 2, stats::var) > 1e-12
       n_dropped <- n_dropped + sum(!keep); D <- D[, keep, drop = FALSE]; cols <- cols[keep, , drop = FALSE]
     }
-    dz[[t]] <- list(idx = idx, D = D, cols = cols, others = others)
+    dz[[t]] <- list(idx = idx, D = D, cols = cols, others = others, cvn = cvn)
     pairs <- rbind(pairs, data.frame(receiver = t, sender = others))
   }
   fitted <- which(!vapply(seq_len(K), function(t) t > length(dz) || is.null(dz[[t]]), TRUE))
@@ -359,7 +374,8 @@
     z$omj <- which(vapply(z$ci, function(v) !is.na(v[1]) && !is.na(v[2]), TRUE))
     z$omc <- do.call(rbind, lapply(z$ci[z$omj], function(v) v[1:2]))
     nc <- which(z$cols$scale == "niche"); bc <- which(z$cols$scale != "niche")
-    z$sw <- sqrt(cw[idx]); q <- qr(cbind(1, z$D[, bc, drop = FALSE]) * z$sw)
+    z$sw <- sqrt(cw[idx]); q <- qr(cbind(1, z$D[, bc, drop = FALSE], z$cvn) * z$sw)  # niche base design
+    z$cvn <- NULL
     Qf <- qr.Q(q); z$Qb <- Qf[, seq_len(q$rank), drop = FALSE]; z$h0 <- rowSums(Qf^2); rm(Qf)
     z$Nt <- qr.resid(q, z$D[, nc, drop = FALSE] * z$sw)
     z$NtN <- colSums(z$Nt^2); z$NtNt <- crossprod(z$Nt); z$NtQb <- crossprod(z$Nt, z$Qb)

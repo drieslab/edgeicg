@@ -89,3 +89,19 @@ test_that("gene panels (windowed, more genes than panel_genes) equal the one-win
     expect_equal(f$attribution$alpha, one$attribution$alpha, tolerance = 1e-8)
   }
 })
+
+test_that("effect sizes, the min_lfc floor and niche-only covariates", {
+  sim <- simulate_edgeicg(n = 2500, G = 100, seed = 7, gamma = 1.2)
+  f <- edgeicg(sim$counts, sim$coords, sim$types, min_shift = 150, B = 8, backend = "r", verbose = FALSE)
+  expect_true(all(c("lfc") %in% names(f$scale_fits$contact)) && !is.null(f$screen$lfc))
+  r0 <- edgeicg_results(f, "contact", min_lfc = 0); r1 <- edgeicg_results(f, "contact")
+  expect_true(all(abs(r1$lfc) >= 0.25)); expect_lte(nrow(r1), nrow(r0))
+  # lfc: effect x exposure decile range relative to the receiver mean
+  p <- which(f$pairs$receiver == 1 & f$pairs$sender == 2)[1]; g <- 5
+  expect_equal(f$scale_fits$contact$lfc[p, g],
+               log2(max(1 + f$scale_fits$contact$effect[p, g] * f$pairs$dx_contact[p] / f$type_mean[1, g], 1e-3)))
+  fn <- edgeicg(sim$counts, sim$coords, sim$types, min_shift = 150, B = 8, covariates = spatial_basis(sim$coords, 3),
+                covariate_scope = "niche", backend = "r", verbose = FALSE)
+  expect_equal(fn$scale_fits$contact$z, f$scale_fits$contact$z)        # contact and paracrine untouched
+  expect_false(isTRUE(all.equal(fn$screen$z, f$screen$z)))              # the niche screen is adjusted
+})

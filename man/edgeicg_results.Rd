@@ -4,7 +4,12 @@
 \alias{edgeicg_results}
 \title{Results table}
 \usage{
-edgeicg_results(x, scale = c("contact", "paracrine", "niche"), q_thr = 0.05)
+edgeicg_results(
+  x,
+  scale = c("contact", "paracrine", "niche"),
+  q_thr = 0.05,
+  min_lfc = 0.25
+)
 }
 \arguments{
 \item{x}{an \code{EdgeICG} object.}
@@ -12,9 +17,15 @@ edgeicg_results(x, scale = c("contact", "paracrine", "niche"), q_thr = 0.05)
 \item{scale}{one or more of \code{"contact"}, \code{"paracrine"}, \code{"niche"} (niche = calibrated screen).}
 
 \item{q_thr}{keep entries with q below this (1 = all testable entries).}
+
+\item{min_lfc}{keep entries whose effect size, \code{lfc} (log2 fold change between receivers at the 10th and 90th
+percentile of their exposure to the sender), is at least this in absolute value. Default 0.25: at
+whole-section scale significance alone also picks up small confounded associations (zonation, sub-states);
+on the Atera kidney section the floor cut null-gene calls from 27\% to 6\% without losing planted effects of
+at least 0.5. Use 0 for significance only.}
 }
 \value{
-data.table: receiver, sender, gene, scale, effect, se, z, q, plus for niche the top attributed
+data.table: receiver, sender, gene, scale, effect, lfc, se, z, q, plus for niche the top attributed
 sender (\code{top_sender}, \code{alpha}, \code{cs_size}).
 }
 \description{

@@ -15,6 +15,7 @@ edgeicg(
   window_cells = NULL,
   panel_genes = 3000L,
   covariates = NULL,
+  covariate_scope = c("all", "niche"),
   workers = 0L,
   backend = c("auto", "rust", "r"),
   threads = NULL,
@@ -68,6 +69,11 @@ once per pass. Default 3000.}
 and adjusted for but not tested, e.g. a zonation score or \code{\link[=spatial_basis]{spatial_basis()}} to absorb large-scale spatial
 trends (zonation, sub-state gradients) that otherwise correlate with exposure. Columns without variance
 within a receiver type are dropped (with \code{drop_degenerate}).}
+
+\item{covariate_scope}{\code{"all"} (default): covariates enter every test's design; \code{"niche"}: only the niche
+screen's base design (and its calibration). Large-scale spatial trends confound mainly the niche scale; on
+the Atera kidney section \code{spatial_basis()} brought the niche pseudo-null from 4.7\% to 0.7\% with or without the
+contact and paracrine designs, and \code{"niche"} costs less time.}
 
 \item{workers}{number of mirai daemons (0 = sequential). One window: tasks are gene blocks; several windows:
 tasks are bands of windows. Results are identical.}
