@@ -263,19 +263,29 @@
   }
   run$close()
   type_mean <- tsum / pmax(nt, 1)                                     # mean composition (per 100) by type
-  # effect size per test: log2 fold change between receivers at the 10th and 90th percentile of their exposure
-  # to the sender (effect x exposure range, relative to the receiver type's mean composition of the gene)
+  # effect size per test (.edgeicg_lfc): log2 fold change between receivers at the 10th and 90th percentile of
+  # their exposure to the sender
   tmr <- type_mean[pairs$receiver, , drop = FALSE]
   for (s in tested) {
     dx <- mapply(function(t, kk) diff(stats::quantile(smat[[s]][types == t, kk], c(0.1, 0.9), names = FALSE)),
                  pairs$receiver, pairs$sender)
     pairs[[paste0("dx_", s)]] <- dx
-    fits[[s]]$lfc <- log2(pmax(1 + fits[[s]]$effect * dx / pmax(tmr, 1e-9), 1e-3))
+    fits[[s]]$lfc <- .edgeicg_lfc(fits[[s]]$effect, dx, tmr)
   }
-  screen$lfc <- log2(pmax(1 + screen$effect * pairs$dx_niche / pmax(tmr, 1e-9), 1e-3))
+  screen$lfc <- .edgeicg_lfc(screen$effect, pairs$dx_niche, tmr)
   list(genes = genes, K = K, pairs = pairs, fitted = fitted, a = a, type_mean = type_mean, det = det_t,
        scale_fits = fits, omni = omni, omni_q = omni_q, screen = screen, cond = cond, attribution = Att,
        calibration = cal, timing = tm, n_dropped = n_dropped, n_prefiltered = n_prefiltered, n_windows = nrow(win$w))
+}
+
+# Effect size: log2 ratio of the fitted mean composition at the 90th and the 10th percentile of exposure,
+# placed symmetrically around the receiver type's mean (tm +/- effect x dx / 2). The half-change is capped at
+# 90% of the type mean, so a linear fit that would cross zero gives a bounded value, |lfc| <= log2(1.9 / 0.1)
+# = 4.25, instead of log2(0). For small effects it equals log2(1 + effect x dx / tm) to first order.
+# effect, tm: pairs x genes; dx: per pair.
+.edgeicg_lfc <- function(effect, dx, tm) {
+  tm <- pmax(tm, 1e-9); h <- pmin(pmax(effect * dx / 2, -0.9 * tm), 0.9 * tm)
+  log2((tm + h) / (tm - h))
 }
 
 # One sweep: tasks, run, sums reduced per gene group. With one window each task is one gene group (parallel over

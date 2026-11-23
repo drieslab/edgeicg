@@ -35,13 +35,16 @@ from candidate biology. Classes (first that applies):
 \itemize{
 \item \code{sender_marker}: the gene marks the tested sender (sender specificity > \code{spec_thr}, or in \code{markers}).
 \item \code{other_marker}: the gene marks a third type (not the receiver).
-\item \code{own_down}: one of the receiver's own markers goes down (possible dilution).
+\item \code{own_down}: a gene of the receiver goes down next to the sender, where the receiver expresses it far more
+than the sender (receiver specificity against the sender > \code{spec_thr}, or in \code{markers} of the receiver).
+Next to that sender, mixed or mis-segmented cells and dilution by the sender's transcripts lower such
+genes, so these hits need checking before they are read as regulation.
 \item \code{clean}: none of the above.
 }
 
 Niche hits where the same sender and sign recur in at least \code{regional_n} receiver types are flagged
 \code{regional} (shared tissue zone or a regional technical artefact).
 
-Specificity of gene g for type k against receiver r is \code{m_kg / (m_kg + m_rg)} with \code{m} the mean
+Specificity of gene g for type k against type r is \code{m_kg / (m_kg + m_rg)} with \code{m} the mean
 composition per type from the fit (\code{x$type_mean}).
 }

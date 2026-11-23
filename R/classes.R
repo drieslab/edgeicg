@@ -5,13 +5,16 @@
 #'
 #' * `sender_marker`: the gene marks the tested sender (sender specificity > `spec_thr`, or in `markers`).
 #' * `other_marker`: the gene marks a third type (not the receiver).
-#' * `own_down`: one of the receiver's own markers goes down (possible dilution).
+#' * `own_down`: a gene of the receiver goes down next to the sender, where the receiver expresses it far more
+#'   than the sender (receiver specificity against the sender > `spec_thr`, or in `markers` of the receiver).
+#'   Next to that sender, mixed or mis-segmented cells and dilution by the sender's transcripts lower such
+#'   genes, so these hits need checking before they are read as regulation.
 #' * `clean`: none of the above.
 #'
 #' Niche hits where the same sender and sign recur in at least `regional_n` receiver types are flagged
 #' `regional` (shared tissue zone or a regional technical artefact).
 #'
-#' Specificity of gene g for type k against receiver r is `m_kg / (m_kg + m_rg)` with `m` the mean
+#' Specificity of gene g for type k against type r is `m_kg / (m_kg + m_rg)` with `m` the mean
 #' composition per type from the fit (`x$type_mean`).
 #'
 #' @param x an `EdgeICG` object.
@@ -34,7 +37,7 @@ edgeicg_classify <- function(x, hits, markers = NULL, types_considered = NULL, s
     o <- setdiff(oth_all, c(r, s)); if (!length(o)) return(FALSE)
     any(spec(match(o, lev), rep(match(r, lev), length(o)), rep(gidx, length(o))) > spec_thr) || any(vapply(o, inm, TRUE, gene = g))
   }, receiver, sender, gene, gi)]
-  h[, own_down := mapply(inm, receiver, gene) & z < 0]
+  h[, own_down := (spec(ri, si, gi) > spec_thr | mapply(inm, receiver, gene)) & z < 0]
   h[, class := data.table::fifelse(sender_mk, "sender_marker", data.table::fifelse(other_mk, "other_marker",
                  data.table::fifelse(own_down, "own_down", "clean")))]
   h[, regional := scale == "niche" & .N >= regional_n, by = list(scale, sender, gene, sign(z))]
