@@ -52,6 +52,14 @@
 #'   the regression of the leak coefficients across genes.
 #' @param seed seed of the calibration shifts.
 #' @param verbose progress messages.
+#' @param region optional region per cell (character or factor; NA = not in a region). The effect of every entry
+#'   is then also estimated within each region, with a test of whether it differs between regions; see
+#'   [edgeicg_region_results()]. The leak model and the other terms of the model stay global.
+#' @param local TRUE: the same within square patches of `patch_size` microns ([edgeicg_patches()]), to find
+#'   where in the tissue an effect is strongest; see [edgeicg_local_results()].
+#' @param patch_size patch side for `local` (microns).
+#' @param min_cells_region,min_exposed_region a region or patch is used for a receiver type with at least
+#'   `min_cells_region` of its cells, and for an entry with at least `min_exposed_region` exposed receivers.
 #' @param ... further engine settings: `huber`, `scale`, `max_size`, `prior_sd`, `cs_level`, `k`, `sigma_p`,
 #'   `sigma_n`, `bin`.
 #' @return an `EdgeICG` object; see [edgeicg_results()].
@@ -60,7 +68,9 @@ edgeicg <- function(counts, coords, types, lib = NULL, spill_edges = NULL, ex = 
                     window_cells = NULL, panel_genes = 3000L, covariates = NULL,
                     covariate_scope = c("all", "niche"), workers = 0L, backend = c("auto", "rust", "r"), threads = NULL, calibrate = TRUE, calib_cond = TRUE, attribute = TRUE,
                     B = 30L, min_shift = 450, q_thr = 0.05, min_cells = 60L, min_det = 0.01, min_exposed = 30L,
-                    exposed_at = 0.1, drop_degenerate = TRUE, prefilter = TRUE, seed = 1L, verbose = TRUE, ...) {
+                    exposed_at = 0.1, drop_degenerate = TRUE, prefilter = TRUE, seed = 1L, verbose = TRUE,
+                    region = NULL, local = FALSE, patch_size = 1000, min_cells_region = 50L, min_exposed_region = 20L,
+                    ...) {
   backend <- match.arg(backend); covariate_scope <- match.arg(covariate_scope)
   has_rs <- requireNamespace("edgeicgrs", quietly = TRUE)
   if (backend == "rust" && !has_rs) stop("backend = 'rust' needs the edgeicgrs package")
@@ -84,6 +94,14 @@ edgeicg <- function(counts, coords, types, lib = NULL, spill_edges = NULL, ex = 
     covariates <- as.matrix(covariates)
     if (nrow(covariates) != n || !is.numeric(covariates) || anyNA(covariates)) stop("covariates must be a numeric n x q matrix without NA")
   }
+  strata <- list()
+  if (!is.null(region)) {
+    if (length(region) != n) stop("region must have one value per cell")
+    rl <- if (is.factor(region)) levels(droplevels(region)) else sort(unique(as.character(region[!is.na(region)])))
+    if (length(rl) < 2) stop("region needs at least two regions")
+    strata$region <- list(code = match(as.character(region), rl), labels = rl)
+  }
+  if (isTRUE(local)) strata$local <- edgeicg_patches(coords, patch_size)
   if (is.null(window_cells)) window_cells <- if (identical(pv$kind, "memory")) Inf else            # a store is read
     min(getOption("edgeicg.window_cells", 50000), ceiling(n / max(1L, workers)))                    # once per sweep
   if (is.null(ex)) ex <- edgeicg_exposures(coords, tcode, K, k = opt("k", 8), sigma_p = opt("sigma_p", 25),
@@ -93,13 +111,16 @@ edgeicg <- function(counts, coords, types, lib = NULL, spill_edges = NULL, ex = 
                        min_exposed, exposed_at, opt("huber", 1.345), opt("scale", 100), calibrate, B, min_shift, seed,
                        calib_cond, attribute, q_thr, opt("max_size", 2), opt("prior_sd", c(0.05, 0.1, 0.2)),
                        opt("cs_level", 0.95), as.integer(workers), .edgeicg_xp(backend, as.integer(threads)),
-                       drop_degenerate, prefilter, panel_genes, verbose, covariates, covariate_scope)
+                       drop_degenerate, prefilter, panel_genes, verbose, covariates, covariate_scope,
+                       strata, as.integer(min_cells_region), as.integer(min_exposed_region), opt("local_p", 0.1))
   r$types <- lev; r$n_cells <- n; r$type_n <- tabulate(tcode, K)
   r$settings <- list(block_genes = block_genes, window_cells = window_cells, workers = workers, backend = backend,
                      threads = threads, covariates = if (is.null(covariates)) 0L else ncol(covariates),
                      covariate_scope = covariate_scope, calibrate = calibrate,
                      calib_cond = calib_cond, B = B, min_shift = min_shift, q_thr = q_thr, exposures = ex$settings,
-                     spill = if (is.null(spill_edges)) "knn" else "custom")
+                     spill = if (is.null(spill_edges)) "knn" else "custom",
+                     region = !is.null(region), local = isTRUE(local), patch_size = if (isTRUE(local)) patch_size,
+                     min_cells_region = min_cells_region, min_exposed_region = min_exposed_region)
   structure(r, class = "EdgeICG")
 }
 
@@ -149,6 +170,11 @@ print.EdgeICG <- function(x, ...) {
   cat(sprintf("  niche     %d (%d)%s\n", h[1], h[2], if (is.null(x$calibration)) ", uncalibrated" else ", screen"))
   if (!is.null(x$attribution) && nrow(x$attribution))
     cat(sprintf("            attributed (receiver, gene): %d\n", nrow(unique(x$attribution[, list(receiver, gene)]))))
+  hq <- function(R) vapply(R$het, function(h) sum(h$q < 0.05, na.rm = TRUE), 1)
+  if (!is.null(x$region)) cat(sprintf("  region-dependent (q_het < 0.05) over %d regions: %s\n", length(x$region$labels),
+                                      paste(names(x$region$het), hq(x$region), collapse = ", ")))
+  if (!is.null(x$local)) cat(sprintf("  local (q_het < 0.05) over %d patches: %s\n", length(x$local$labels),
+                                     paste(names(x$local$het), hq(x$local), collapse = ", ")))
   invisible(x)
 }
 

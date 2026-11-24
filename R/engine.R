@@ -17,10 +17,12 @@
 .edgeicg_engine <- function(pv, coords, types, lib, ex, spill_edges, block_genes, window_cells, min_cells, min_det,
                             min_exposed, exposed_at, huber, scale, calibrate, B, min_shift, seed, calib_cond, attribute,
                             q_thr, max_size, prior_sd, cs_level, workers, xp, drop_degenerate, prefilter, panel_genes,
-                            verbose, covariates = NULL, covariate_scope = "all") {
+                            verbose, covariates = NULL, covariate_scope = "all", strata = NULL, min_cells_region = 50L,
+                            min_exposed_region = 20L, local_p = 0.1) {
   t0 <- proc.time()[[3]]; tm <- c()
   S <- .edgeicg_setup(pv, coords, types, lib, ex, spill_edges, block_genes, window_cells, min_cells, scale, calibrate,
-                      B, min_shift, seed, calib_cond, drop_degenerate, verbose, t0, covariates, covariate_scope)
+                      B, min_shift, seed, calib_cond, drop_degenerate, verbose, t0, covariates, covariate_scope,
+                      strata, min_cells_region)
   genes <- S$genes; G <- S$G; n <- S$n; K <- S$K; tested <- S$tested; blocks <- S$blocks; sh <- S$sh
   ct <- S$ct; wn <- S$wn; tr <- S$tr; ts <- S$ts; het <- S$het; smat <- S$smat; dz <- S$dz; pairs <- S$pairs
   fitted <- S$fitted; P_n <- S$P_n; n_dropped <- S$n_dropped; sw_p <- S$sw_p; win <- S$win; st <- S$st
@@ -130,12 +132,15 @@
   est <- lapply(tested, function(s) list(g = matrix(NA_real_, P_n, G), se = matrix(NA_real_, P_n, G))); names(est) <- tested
   omni <- bM <- seM <- Sm <- Sc <- zc0 <- matrix(NA_real_, P_n, G)
   QbY_all <- NtYt_all <- vector("list", K)
+  STR <- if (length(strata)) vector("list", length(blocks)) else NULL
   for (t in fitted) {
     QbY_all[[t]] <- matrix(NA_real_, ncol(dz[[t]]$Qb), G)
     if (length(dz[[t]]$nsend)) NtYt_all[[t]] <- matrix(NA_real_, length(dz[[t]]$nsend), G)
   }
   for (k in seq_along(blocks)) {
     gi <- blocks[[k]]; r <- R2[[k]]
+    if (!is.null(STR)) STR[[k]] <- lapply(seq_len(K), function(t) { f <- r$t[[t]]; if (is.null(f)) NULL else
+      list(str = f$str, coef = f$coef[dz[[t]]$sgi[[1]]$cp, , drop = FALSE]) })
     for (t in fitted) {
       z <- dz[[t]]; f <- r$t[[t]]
       QbY_all[[t]][, gi] <- f$QbY
@@ -273,9 +278,15 @@
     fits[[s]]$lfc <- .edgeicg_lfc(fits[[s]]$effect, dx, tmr)
   }
   screen$lfc <- .edgeicg_lfc(screen$effect, pairs$dx_niche, tmr)
-  list(genes = genes, K = K, pairs = pairs, fitted = fitted, a = a, type_mean = type_mean, det = det_t,
+  out <- list(genes = genes, K = K, pairs = pairs, fitted = fitted, a = a, type_mean = type_mean, det = det_t,
        scale_fits = fits, omni = omni, omni_q = omni_q, screen = screen, cond = cond, attribution = Att,
        calibration = cal, timing = tm, n_dropped = n_dropped, n_prefiltered = n_prefiltered, n_windows = nrow(win$w))
+  for (nm in names(strata)) {
+    out[[nm]] <- .strata_collect(nm, match(nm, names(strata)), strata[[nm]], STR, blocks, dz, fitted, pairs, G, K, types,
+                                 smat, tested, exposed_at, fits, okn, im, tmr, min_exposed_region, local_p)
+    out$timing[nm] <- proc.time()[[3]] - t0 - sum(out$timing)
+  }
+  out
 }
 
 # Effect size: log2 ratio of the fitted mean composition at the 90th and the 10th percentile of exposure,
@@ -322,7 +333,7 @@
 # the touching-sender averaging matrix E. Returns the variables the engine uses, and st (the state the tasks need).
 .edgeicg_setup <- function(pv, coords, types, lib, ex, spill_edges, block_genes, window_cells, min_cells, scale,
                            calibrate, B, min_shift, seed, calib_cond, drop_degenerate, verbose, t0 = proc.time()[[3]],
-                           covariates = NULL, covariate_scope = "all") {
+                           covariates = NULL, covariate_scope = "all", strata = NULL, min_cells_region = 50L) {
   genes <- pv$genes; G <- length(genes); n <- length(types); K <- max(types)
   tested <- c("contact", "paracrine", "niche")
   blocks <- unname(split(seq_len(G), ceiling(seq_len(G) / block_genes)))
@@ -415,6 +426,11 @@
         }
       }
     }
+    if (length(strata)) {                                            # region / local strata (strata.R)
+      ss <- lapply(strata, function(S) .strata_type_setup(z, S$code, length(S$labels), min_cells_region))
+      z$sg <- lapply(ss, `[[`, "g"); z$sXC <- lapply(ss, `[[`, "XC"); z$sNC <- lapply(ss, `[[`, "NC")
+      z$sgi <- lapply(ss, function(x) x[c("nd", "cp", "xbar", "sxx", "nxbar", "nsxx")])
+    }
     z$D <- NULL
     dz[[t]] <- z
   }
@@ -427,7 +443,8 @@
 
   st <- list(pv = pv, lib = lib, scale = scale, dz = dz, fitted = fitted, types = types, E = E, K = K, P_n = P_n,
              tested = tested, calibrate = calibrate, calib_cond = calib_cond, single = nrow(win$w) == 1L,
-             ord = win$ord, wtypes = .edgeicg_window_types(win, types, dz, fitted))
+             ord = win$ord, wtypes = .edgeicg_window_types(win, types, dz, fitted),
+             strata_D = vapply(strata, function(S) length(S$labels), 1L))
   sh <- if (calibrate) sh else NULL
   list(genes = genes, G = G, n = n, K = K, tested = tested, blocks = blocks, sh = sh, ct = ct, wn = wn, tr = tr,
        ts = ts, het = het, smat = smat, dz = dz, pairs = pairs, fitted = fitted, P_n = P_n, n_dropped = n_dropped,

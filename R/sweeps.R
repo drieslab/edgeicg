@@ -12,7 +12,7 @@
 .row_fields <- list(
   p1  = c("A", "Aw", "M", "h"),
   p2a = c("Aw", "sw", "Qb", "Nt", "Qo"),
-  p2b = c("A", "M", "h", "sw", "Qb", "h0", "Nt", "Zs", "Qo", "hc"),
+  p2b = c("A", "M", "h", "sw", "Qb", "h0", "Nt", "Zs", "Qo", "hc", "sg", "sXC", "sNC"),
   p3  = c("sw", "Qb", "h0", "Nt"))
 .glob_fields <- c("Ginv", "NtN", "NtNt", "NtQb", "zz", "wz2", "QoZs", "zzC", "wz2C", "QoQb", "ci", "pp",
                   "others", "nsend", "npp", "omc", "omj")
@@ -176,11 +176,19 @@
 }
 
 .k_p2b <- function(st, z, Y, f) {
-  R2 <- ((Y - st$mp(z$A, f$coef)) / (1 - z$h))^2
+  Rr <- Y - st$mp(z$A, f$coef)
+  R2 <- (Rr / (1 - z$h))^2
   out <- list(se2 = st$xp(z$M^2, R2))
   if (length(z$omj)) out$om12 <- st$xp(z$M[, z$omc[, 1], drop = FALSE] * z$M[, z$omc[, 2], drop = FALSE], R2)
+  Yt <- if (length(z$nsend)) Y * z$sw - st$mp(z$Qb, f$QbY) else NULL
+  if (length(z$sg)) {                                                # region / local strata (strata.R)
+    rs <- Rr * z$sw
+    out$str <- lapply(seq_along(z$sg), function(k) list(
+      cp = .strata_sums(z$sg[[k]], z$sXC[[k]], rs, st$strata_D[k]),
+      nt = if (!is.null(Yt)) .strata_sums(z$sg[[k]], z$sNC[[k]], Yt, st$strata_D[k])))
+  }
+  rm(Rr)
   if (!length(z$nsend)) return(out)
-  Yt <- Y * z$sw - st$mp(z$Qb, f$QbY)
   nn <- length(z$nsend); v11 <- matrix(0, nn, ncol(Y))
   for (j in seq_len(nn)) {
     Zj <- z$Nt[, j]; hj <- pmin(z$h0 + Zj^2 / z$NtN[j], 0.99)
