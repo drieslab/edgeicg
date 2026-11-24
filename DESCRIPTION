@@ -16,6 +16,7 @@ Encoding: UTF-8
 Depends: R (>= 4.2)
 Imports: Matrix, data.table, methods, RANN, splines, stats, utils
 Suggests: edgeicgrs, mirai, testthat (>= 3.0.0), GiottoDisk, arrow, knitr, rmarkdown
+Remotes: drieslab/edgeicgrs, giotto-suite/GiottoDisk
 Config/testthat/edition: 3
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
