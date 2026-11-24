@@ -38,13 +38,17 @@ edgeicg(
   patch_size = 1000,
   min_cells_region = 50L,
   min_exposed_region = 20L,
+  genes = NULL,
+  leak_genes = c("all", "tested"),
+  leak = NULL,
   ...
 )
 }
 \arguments{
 \item{counts}{raw counts, genes x cells: a \code{dgCMatrix} or dense matrix, a GiottoDisk expression store, or a
-provider from \code{\link[=counts_provider]{counts_provider()}} / \code{\link[=counts_provider_store]{counts_provider_store()}}. Only the genes to test; the library size
-comes from \code{lib}.}
+provider from \code{\link[=counts_provider]{counts_provider()}} / \code{\link[=counts_provider_store]{counts_provider_store()}}. Give all genes (or a broad set) and choose
+the genes to test with \code{genes}: the leak coefficients are fitted across the genes of \code{counts} (see
+\code{leak_genes}). The library size comes from \code{lib}.}
 
 \item{coords}{n x 2 cell centroids (microns), in the provider's cell order.}
 
@@ -126,6 +130,16 @@ calibrated but has little power for smooth or half-plane patterns; prefer \code{
 
 \item{min_cells_region, min_exposed_region}{a region or patch is used for a receiver type with at least
 \code{min_cells_region} of its cells, and for an entry with at least \code{min_exposed_region} exposed receivers.}
+
+\item{genes}{genes to test (default: all genes of \code{counts}).}
+
+\item{leak_genes}{genes the leak coefficients (lambda, mu per receiver-sender pair) are fitted on. \code{"all"}
+(default): all genes of \code{counts} that pass the prefilter, so the leak, and with it the contact results, do
+not change with the genes chosen for testing. This costs one extra pass over all genes (stage 1 only).
+\code{"tested"}: only the genes in \code{genes}; faster, but the leak then depends on that selection.}
+
+\item{leak}{optional leak coefficients to reuse instead of fitting them: an \code{EdgeICG} fit or its \code{pairs}
+table (columns \code{receiver}, \code{sender}, \code{lambda}, \code{mu}). Pairs without a value get no leak correction.}
 
 \item{...}{further engine settings: \code{huber}, \code{scale}, \code{max_size}, \code{prior_sd}, \code{cs_level}, \code{k}, \code{sigma_p},
 \code{sigma_n}, \code{bin}.}
