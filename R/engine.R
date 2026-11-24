@@ -370,7 +370,9 @@
     dz[[t]] <- list(idx = idx, D = D, cols = cols, others = others, cvn = cvn)
     pairs <- rbind(pairs, data.frame(receiver = t, sender = others))
   }
-  fitted <- which(!vapply(seq_len(K), function(t) t > length(dz) || is.null(dz[[t]]), TRUE))
+  length(dz) <- K                                                     # trailing unfitted types stay NULL
+  fitted <- which(!vapply(dz, is.null, TRUE))
+  if (!length(fitted)) stop("no cell type has at least min_cells = ", min_cells, " cells")
   P_n <- nrow(pairs)
   for (t in fitted) {
     z <- dz[[t]]; idx <- z$idx

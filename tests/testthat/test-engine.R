@@ -107,3 +107,15 @@ test_that("effect sizes, the min_lfc floor and niche-only covariates", {
   expect_equal(fn$scale_fits$contact$z, f$scale_fits$contact$z)        # contact and paracrine untouched
   expect_false(isTRUE(all.equal(fn$screen$z, f$screen$z)))              # the niche screen is adjusted
 })
+
+test_that("a rare last cell type (below min_cells) is skipped, not an error", {
+  ty <- sim$types; lv <- if (is.factor(ty)) levels(ty) else sort(unique(ty))
+  last <- which(ty == lv[length(lv)])
+  ty[last[-(1:5)]] <- lv[1]                                         # keep 5 cells of the last type
+  f <- edgeicg(sim$counts, sim$coords, ty, lib = sim$lib, B = 8, min_shift = 150, min_cells = 20, verbose = FALSE)
+  expect_s3_class(f, "EdgeICG")
+  expect_false(lv[length(lv)] %in% as.character(f$pairs$receiver))
+  w <- edgeicg(sim$counts, sim$coords, ty, lib = sim$lib, B = 8, min_shift = 150, min_cells = 20,
+               window_cells = 700, backend = "r", verbose = FALSE)
+  expect_equal(w$screen$z, f$screen$z, tolerance = 1e-8)
+})
