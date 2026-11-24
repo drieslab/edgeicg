@@ -41,6 +41,12 @@ hits <- edgeicg_classify(fit, edgeicg_results(fit))
 For real data:
 - Pass touching-cell edges from the cell outlines with `contact_from_polygons()` as `spill_edges`.
 - Pass the library size over all genes as `lib`.
+- Pass all genes as `counts` and choose the genes to test with `genes`. The leak is fitted across the genes of
+  `counts` (`leak_genes = "all"`, the default), which costs one extra stage-1 pass over all genes. A selected panel
+  biases it: on the Atera breast section, λ fitted on 2,000 HVFs plus interferon genes correlated at 0.60 with λ
+  from all 17,423 genes and was 1.27× higher (median), while random panels of 3,000 genes gave 0.99 and two
+  disjoint random halves 0.99 with each other. `leak_genes = "tested"` fits it on `genes` only (faster), and
+  `leak = <earlier fit>` reuses a leak from another run.
 
 ## Effect sizes and confounding
 - **Effect size per test:** `lfc`, the log2 fold change between receivers at the 10th and 90th percentile of their exposure. By default, results need |lfc| ≥ 0.25 (`edgeicg_results(min_lfc = 0.25)`).

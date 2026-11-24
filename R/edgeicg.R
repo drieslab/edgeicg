@@ -5,8 +5,16 @@
 #' touching neighbours. See the package description for the model.
 #'
 #' @param counts raw counts, genes x cells: a `dgCMatrix` or dense matrix, a GiottoDisk expression store, or a
-#'   provider from [counts_provider()] / [counts_provider_store()]. Only the genes to test; the library size
-#'   comes from `lib`.
+#'   provider from [counts_provider()] / [counts_provider_store()]. Give all genes (or a broad set) and choose
+#'   the genes to test with `genes`: the leak coefficients are fitted across the genes of `counts` (see
+#'   `leak_genes`). The library size comes from `lib`.
+#' @param genes genes to test (default: all genes of `counts`).
+#' @param leak_genes genes the leak coefficients (lambda, mu per receiver-sender pair) are fitted on. `"all"`
+#'   (default): all genes of `counts` that pass the prefilter, so the leak, and with it the contact results, do
+#'   not change with the genes chosen for testing. This costs one extra pass over all genes (stage 1 only).
+#'   `"tested"`: only the genes in `genes`; faster, but the leak then depends on that selection.
+#' @param leak optional leak coefficients to reuse instead of fitting them: an `EdgeICG` fit or its `pairs`
+#'   table (columns `receiver`, `sender`, `lambda`, `mu`). Pairs without a value get no leak correction.
 #' @param coords n x 2 cell centroids (microns), in the provider's cell order.
 #' @param types cell-type labels (character or factor), one per cell.
 #' @param lib library size per cell over **all** genes (default: column sums of `counts` if it is a matrix).
@@ -71,8 +79,8 @@ edgeicg <- function(counts, coords, types, lib = NULL, spill_edges = NULL, ex = 
                     B = 30L, min_shift = 450, q_thr = 0.05, min_cells = 60L, min_det = 0.01, min_exposed = 30L,
                     exposed_at = 0.1, drop_degenerate = TRUE, prefilter = TRUE, seed = 1L, verbose = TRUE,
                     region = NULL, local = FALSE, patch_size = 1000, min_cells_region = 50L, min_exposed_region = 20L,
-                    ...) {
-  backend <- match.arg(backend); covariate_scope <- match.arg(covariate_scope)
+                    genes = NULL, leak_genes = c("all", "tested"), leak = NULL, ...) {
+  backend <- match.arg(backend); covariate_scope <- match.arg(covariate_scope); leak_genes <- match.arg(leak_genes)
   has_rs <- requireNamespace("edgeicgrs", quietly = TRUE)
   if (backend == "rust" && !has_rs) stop("backend = 'rust' needs the edgeicgrs package")
   backend <- if (backend == "r" || !has_rs) "r" else "rust"
@@ -108,12 +116,43 @@ edgeicg <- function(counts, coords, types, lib = NULL, spill_edges = NULL, ex = 
   if (is.null(ex)) ex <- edgeicg_exposures(coords, tcode, K, k = opt("k", 8), sigma_p = opt("sigma_p", 25),
                                            sigma_n = opt("sigma_n", 150), bin = opt("bin", 10))
   if (calibrate && is.null(ex$fields)) stop("ex has no niche fields; build it with edgeicg_exposures()")
+  xp_b <- .edgeicg_xp(backend, as.integer(threads))
+  huber <- opt("huber", 1.345); sc <- opt("scale", 100)
+  gi <- NULL
+  if (!is.null(genes)) {
+    gi <- match(unique(genes), pv$genes)
+    if (anyNA(gi)) stop(sum(is.na(gi)), " of genes not found in counts, e.g. ", unique(genes)[is.na(gi)][1])
+    if (length(gi) == length(pv$genes)) gi <- NULL
+  }
+  leak_src <- if (!is.null(leak)) "supplied" else if (is.null(gi)) "all" else leak_genes
+  if (!is.null(leak)) {
+    lp <- if (inherits(leak, "EdgeICG")) {
+      data.frame(receiver = leak$types[leak$pairs$receiver], sender = leak$types[leak$pairs$sender],
+                 lambda = leak$pairs$lambda, mu = leak$pairs$mu)
+    } else as.data.frame(leak)
+    if (!all(c("receiver", "sender", "lambda", "mu") %in% names(lp))) stop("leak needs receiver, sender, lambda and mu")
+    leak <- data.frame(receiver = match(as.character(lp$receiver), lev), sender = match(as.character(lp$sender), lev),
+                       lambda = lp$lambda, mu = lp$mu)
+  } else if (!is.null(gi) && leak_genes == "all") {                 # stage 1 on all genes, leak only
+    if (verbose) message("leak: fitting lambda / mu on all ", length(pv$genes), " genes of counts")
+    lk <- .edgeicg_engine(pv, coords, tcode, lib, ex, spill_edges, block_genes, window_cells, min_cells, min_det,
+                          min_exposed, exposed_at, huber, sc, FALSE, B, min_shift, seed, FALSE, FALSE, q_thr,
+                          opt("max_size", 2), opt("prior_sd", c(0.05, 0.1, 0.2)), opt("cs_level", 0.95),
+                          as.integer(workers), xp_b, drop_degenerate, prefilter, panel_genes, verbose, covariates,
+                          covariate_scope, list(), as.integer(min_cells_region), as.integer(min_exposed_region),
+                          leak_only = TRUE)
+    leak <- lk$pairs[, c("receiver", "sender", "lambda", "mu")]
+    leak_src <- sprintf("all (%d genes)", lk$n_genes)
+  }
+  if (!is.null(gi)) pv <- pv$narrow(gi)
   r <- .edgeicg_engine(pv, coords, tcode, lib, ex, spill_edges, block_genes, window_cells, min_cells, min_det,
-                       min_exposed, exposed_at, opt("huber", 1.345), opt("scale", 100), calibrate, B, min_shift, seed,
+                       min_exposed, exposed_at, huber, sc, calibrate, B, min_shift, seed,
                        calib_cond, attribute, q_thr, opt("max_size", 2), opt("prior_sd", c(0.05, 0.1, 0.2)),
-                       opt("cs_level", 0.95), as.integer(workers), .edgeicg_xp(backend, as.integer(threads)),
+                       opt("cs_level", 0.95), as.integer(workers), xp_b,
                        drop_degenerate, prefilter, panel_genes, verbose, covariates, covariate_scope,
-                       strata, as.integer(min_cells_region), as.integer(min_exposed_region), opt("local_p", 0.1))
+                       strata, as.integer(min_cells_region), as.integer(min_exposed_region), opt("local_p", 0.1),
+                       leak = leak)
+  if (leak_src %in% c("all", "tested")) leak_src <- sprintf("%s (%d genes)", leak_src, length(r$genes))
   r$types <- lev; r$n_cells <- n; r$type_n <- tabulate(tcode, K)
   r$settings <- list(block_genes = block_genes, window_cells = window_cells, workers = workers, backend = backend,
                      threads = threads, covariates = if (is.null(covariates)) 0L else ncol(covariates),
@@ -121,7 +160,8 @@ edgeicg <- function(counts, coords, types, lib = NULL, spill_edges = NULL, ex = 
                      calib_cond = calib_cond, B = B, min_shift = min_shift, q_thr = q_thr, exposures = ex$settings,
                      spill = if (is.null(spill_edges)) "knn" else "custom",
                      region = !is.null(region), local = isTRUE(local), patch_size = if (isTRUE(local)) patch_size,
-                     min_cells_region = min_cells_region, min_exposed_region = min_exposed_region)
+                     min_cells_region = min_cells_region, min_exposed_region = min_exposed_region,
+                     leak_genes = leak_src)
   structure(r, class = "EdgeICG")
 }
 
@@ -164,6 +204,7 @@ edgeicg_results <- function(x, scale = c("contact", "paracrine", "niche"), q_thr
 print.EdgeICG <- function(x, ...) {
   cat(sprintf("EdgeICG: %d cells, %d types, %d genes, %d pairs (%s)\n", x$n_cells, length(x$types), length(x$genes),
               nrow(x$pairs), paste(names(x$timing), sprintf("%.0f s", x$timing), collapse = ", ")))
+  if (!is.null(x$settings$leak_genes)) cat(sprintf("  leak fitted on: %s\n", x$settings$leak_genes))
   nh <- function(f) c(sum(f$q < 0.05 & abs(f$lfc) >= 0.25, na.rm = TRUE), sum(f$q < 0.05, na.rm = TRUE))
   cat("  hits: q < 0.05 and |log2 FC| >= 0.25 (q < 0.05 alone)\n")
   for (s in c("contact", "paracrine")) { h <- nh(x$scale_fits[[s]]); cat(sprintf("  %-9s %d (%d)\n", s, h[1], h[2])) }

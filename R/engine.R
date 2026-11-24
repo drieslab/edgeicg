@@ -18,7 +18,7 @@
                             min_exposed, exposed_at, huber, scale, calibrate, B, min_shift, seed, calib_cond, attribute,
                             q_thr, max_size, prior_sd, cs_level, workers, xp, drop_degenerate, prefilter, panel_genes,
                             verbose, covariates = NULL, covariate_scope = "all", strata = NULL, min_cells_region = 50L,
-                            min_exposed_region = 20L, local_p = 0.1) {
+                            min_exposed_region = 20L, local_p = 0.1, leak = NULL, leak_only = FALSE) {
   t0 <- proc.time()[[3]]; tm <- c()
   S <- .edgeicg_setup(pv, coords, types, lib, ex, spill_edges, block_genes, window_cells, min_cells, scale, calibrate,
                       B, min_shift, seed, calib_cond, drop_degenerate, verbose, t0, covariates, covariate_scope,
@@ -104,11 +104,20 @@
   rm(R1); mbar[sw_p == 0, ] <- NA
   tm["pass1"] <- proc.time()[[3]] - t0; .say(verbose, t0, "pass 1 done")
   lam <- mu <- rep(NA_real_, P_n)
-  for (p in seq_len(P_n)) {
-    t <- pairs$receiver[p]
-    if (anyNA(mbar[p, ]) || anyNA(a[t, ]) || anyNA(b1[p, ])) next
-    dc <- tryCatch(.decompose(b1[p, ], se1[p, ], mbar[p, ], a[t, ], huber), error = function(e) list(lam = 0, mu = 0))
-    lam[p] <- dc$lam; mu[p] <- dc$mu
+  if (is.null(leak)) {
+    for (p in seq_len(P_n)) {
+      t <- pairs$receiver[p]
+      if (anyNA(mbar[p, ]) || anyNA(a[t, ]) || anyNA(b1[p, ])) next
+      dc <- tryCatch(.decompose(b1[p, ], se1[p, ], mbar[p, ], a[t, ], huber), error = function(e) list(lam = 0, mu = 0))
+      lam[p] <- dc$lam; mu[p] <- dc$mu
+    }
+  } else {                                     # supplied (fitted on a broader gene set, or from an earlier fit)
+    m <- match(paste(pairs$receiver, pairs$sender), paste(leak$receiver, leak$sender))
+    lam <- leak$lambda[m]; mu <- leak$mu[m]
+  }
+  if (leak_only) {
+    pairs$lambda <- lam; pairs$mu <- mu
+    return(list(pairs = pairs, n_genes = G, n_prefiltered = n_prefiltered, time = proc.time()[[3]] - t0))
   }
   lam_mat <- mu_mat <- matrix(0, K, K)
   lam_mat[cbind(pairs$receiver, pairs$sender)] <- ifelse(is.na(lam), 0, lam)
