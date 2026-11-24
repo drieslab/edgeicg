@@ -55,8 +55,9 @@
 #' @param region optional region per cell (character or factor; NA = not in a region). The effect of every entry
 #'   is then also estimated within each region, with a test of whether it differs between regions; see
 #'   [edgeicg_region_results()]. The leak model and the other terms of the model stay global.
-#' @param local TRUE: the same within square patches of `patch_size` microns ([edgeicg_patches()]), to find
-#'   where in the tissue an effect is strongest; see [edgeicg_local_results()].
+#' @param local experimental. TRUE: the same within square patches of `patch_size` microns
+#'   ([edgeicg_patches()]), tested with Cochran's Q over patches; see [edgeicg_local_results()]. The Q test is
+#'   calibrated but has little power for smooth or half-plane patterns; prefer `region` with labels.
 #' @param patch_size patch side for `local` (microns).
 #' @param min_cells_region,min_exposed_region a region or patch is used for a receiver type with at least
 #'   `min_cells_region` of its cells, and for an entry with at least `min_exposed_region` exposed receivers.

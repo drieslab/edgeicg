@@ -2,7 +2,7 @@
 % Please edit documentation in R/strata.R
 \name{edgeicg_local_results}
 \alias{edgeicg_local_results}
-\title{Local effects}
+\title{Local effects (experimental)}
 \usage{
 edgeicg_local_results(
   x,
@@ -24,6 +24,7 @@ effect_shrunk, sd_shrunk)). \code{local_frac}: share of the exposed receivers th
 effect is more than 2 posterior sd from zero, with the sign of the strongest patch.
 }
 \description{
+Experimental: the Q test over patches is calibrated but has little power for smooth or half-plane patterns.
 For a fit with \code{local = TRUE}: for every testable entry, whether its effect varies across patches of the
 tissue (Cochran's Q over patches, BH within scale) and, for entries with \code{q_het < q_thr}, the effect per patch
 with empirical-Bayes shrinkage towards the mean (\code{effect_shrunk}, \code{sd_shrunk}), to map where it is strongest.

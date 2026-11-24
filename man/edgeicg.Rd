@@ -118,8 +118,9 @@ the regression of the leak coefficients across genes.}
 is then also estimated within each region, with a test of whether it differs between regions; see
 \code{\link[=edgeicg_region_results]{edgeicg_region_results()}}. The leak model and the other terms of the model stay global.}
 
-\item{local}{TRUE: the same within square patches of \code{patch_size} microns (\code{\link[=edgeicg_patches]{edgeicg_patches()}}), to find
-where in the tissue an effect is strongest; see \code{\link[=edgeicg_local_results]{edgeicg_local_results()}}.}
+\item{local}{experimental. TRUE: the same within square patches of \code{patch_size} microns
+(\code{\link[=edgeicg_patches]{edgeicg_patches()}}), tested with Cochran's Q over patches; see \code{\link[=edgeicg_local_results]{edgeicg_local_results()}}. The Q test is
+calibrated but has little power for smooth or half-plane patterns; prefer \code{region} with labels.}
 
 \item{patch_size}{patch side for \code{local} (microns).}
 

@@ -143,8 +143,9 @@ edgeicg_region_results <- function(x, scale = c("contact", "paracrine", "niche")
   .strata_table(x, x$region, match.arg(scale, several.ok = TRUE), q_thr, min_lfc, all, "region")
 }
 
-#' Local effects
+#' Local effects (experimental)
 #'
+#' Experimental: the Q test over patches is calibrated but has little power for smooth or half-plane patterns.
 #' For a fit with `local = TRUE`: for every testable entry, whether its effect varies across patches of the
 #' tissue (Cochran's Q over patches, BH within scale) and, for entries with `q_het < q_thr`, the effect per patch
 #' with empirical-Bayes shrinkage towards the mean (`effect_shrunk`, `sd_shrunk`), to map where it is strongest.
