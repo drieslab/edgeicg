@@ -99,11 +99,11 @@ cells; genes detected in at least \code{min_det} of receivers; at least \code{mi
 above \code{exposed_at}.}
 
 \item{drop_degenerate}{drop exposure columns without variance within a receiver type (their tests are NA).
-FALSE reproduces the 2026 prototype exactly.}
+FALSE keeps them in the design.}
 
 \item{prefilter}{drop genes detected in fewer than \code{min_det} of the cells of every receiver type before the
 fit (one cheap detection pass). Such genes have no testable entry; without the prefilter they still enter
-the regression of the leak coefficients across genes. FALSE reproduces the 2026 prototype exactly.}
+the regression of the leak coefficients across genes.}
 
 \item{seed}{seed of the calibration shifts.}
 

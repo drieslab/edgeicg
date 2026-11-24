@@ -2,7 +2,7 @@
 # up. Windows are contiguous ranges of an internal cell order sorted by y (then x): the touching neighbours that the
 # leak correction needs (the halo) then lie in a contiguous range just outside the window, so a window plus its halo
 # is one contiguous row range. On a GiottoDisk store baked in this order (see counts_provider_store()), such a range
-# prunes parquet row groups (GiottoDisk adr/0008); a scattered cell set would not.
+# prunes parquet row groups; a scattered cell set would not.
 #
 # One window (the in-memory default) keeps the original cell order and the engine's single-pass shortcut.
 

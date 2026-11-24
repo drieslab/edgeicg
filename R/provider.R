@@ -48,7 +48,7 @@ counts_provider <- function(counts) {
 #' @param genes genes to analyse (store feature IDs).
 #' @param cells cell IDs in analysis order (store cell IDs).
 #' @details For windowed runs, `order()` bakes the analysis genes into a temporary store in the engine's cell order
-#'   (`GiottoDisk::storeWrite()` of the view, the step GiottoDisk's streaming PCA uses to narrow a store). The
+#'   (`GiottoDisk::storeWrite()` of the view). The
 #'   expression store is sorted by cell, so a window and its halo are then a contiguous row range that prunes
 #'   parquet row groups, and only the analysis genes are scanned. The temporary store is removed by `cleanup()`.
 #' @export

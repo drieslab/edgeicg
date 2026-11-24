@@ -50,5 +50,7 @@ For real data:
 ## Giotto
 `Giotto::findInteractionChangedFeats(g, cluster_column = ..., method = "edgeicg")` runs this engine on a giotto object. The expression can be in memory or GiottoDisk-backed.
 
+EdgeICG succeeds the original interaction-changed feature (ICF) test of Giotto, which compared receivers with and without a neighbour of the sender type. It is the default method of `findInteractionChangedFeats()`; the original test stays available as `method = "classic"`.
+
 ## Status
-0.1.0 is a port of the 2026 ICG2 prototype. With `drop_degenerate = FALSE`, it reproduces the prototype to within 1e-8 on the kidney and breast crops. This holds for both backends and for one window or many.
+0.1.0. Results are identical for both backends (R and Rust), sequential or parallel, and for one window or many (up to rounding).

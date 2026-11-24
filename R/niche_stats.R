@@ -12,7 +12,7 @@
   out
 }
 
-# log approximate Bayes factor (Wakefield, multivariate) vs no effect, Gaussian prior with sd tau on the raw
+# log approximate Bayes factor (normal approximation, multivariate) vs no effect, Gaussian prior with sd tau on the raw
 # effect, averaged over the prior grid (rows of tau1 / tau2).
 .labf <- function(f, tau1, tau2 = NULL) {
   one <- function(k) {

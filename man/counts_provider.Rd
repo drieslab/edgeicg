@@ -44,7 +44,7 @@ live in memory (the block is sent to the worker with its task);
 GiottoDisk expression store, so whole sections never sit in memory: workers read their own windows from it.
 
 For windowed runs, \code{order()} bakes the analysis genes into a temporary store in the engine's cell order
-(\code{GiottoDisk::storeWrite()} of the view, the step GiottoDisk's streaming PCA uses to narrow a store). The
+(\code{GiottoDisk::storeWrite()} of the view). The
 expression store is sorted by cell, so a window and its halo are then a contiguous row range that prunes
 parquet row groups, and only the analysis genes are scanned. The temporary store is removed by \code{cleanup()}.
 }
