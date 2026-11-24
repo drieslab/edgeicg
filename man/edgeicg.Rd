@@ -33,6 +33,11 @@ edgeicg(
   prefilter = TRUE,
   seed = 1L,
   verbose = TRUE,
+  region = NULL,
+  local = FALSE,
+  patch_size = 1000,
+  min_cells_region = 50L,
+  min_exposed_region = 20L,
   ...
 )
 }
@@ -108,6 +113,19 @@ the regression of the leak coefficients across genes.}
 \item{seed}{seed of the calibration shifts.}
 
 \item{verbose}{progress messages.}
+
+\item{region}{optional region per cell (character or factor; NA = not in a region). The effect of every entry
+is then also estimated within each region, with a test of whether it differs between regions; see
+\code{\link[=edgeicg_region_results]{edgeicg_region_results()}}. The leak model and the other terms of the model stay global.}
+
+\item{local}{experimental. TRUE: the same within square patches of \code{patch_size} microns
+(\code{\link[=edgeicg_patches]{edgeicg_patches()}}), tested with Cochran's Q over patches; see \code{\link[=edgeicg_local_results]{edgeicg_local_results()}}. The Q test is
+calibrated but has little power for smooth or half-plane patterns; prefer \code{region} with labels.}
+
+\item{patch_size}{patch side for \code{local} (microns).}
+
+\item{min_cells_region, min_exposed_region}{a region or patch is used for a receiver type with at least
+\code{min_cells_region} of its cells, and for an entry with at least \code{min_exposed_region} exposed receivers.}
 
 \item{...}{further engine settings: \code{huber}, \code{scale}, \code{max_size}, \code{prior_sd}, \code{cs_level}, \code{k}, \code{sigma_p},
 \code{sigma_n}, \code{bin}.}

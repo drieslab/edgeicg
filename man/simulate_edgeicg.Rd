@@ -11,7 +11,8 @@ simulate_edgeicg(
   kappa = 0.1,
   gamma = 1,
   niche_gamma = 0,
-  spacing = 10
+  spacing = 10,
+  region_gamma = 0
 )
 }
 \arguments{
@@ -28,9 +29,14 @@ simulate_edgeicg(
 \item{niche_gamma}{niche log effect.}
 
 \item{spacing}{cell spacing (microns).}
+
+\item{region_gamma}{contact log effect of region-dependent genes (0 = none). Regions are the left and right
+halves of the tissue (\code{region}). Receiver 1 <- sender 2: genes \code{S4} respond only in the right half, genes
+\code{S5} respond in opposite directions (up on the left, down on the right). Needs G >= 150.}
 }
 \value{
-list(counts (genes x cells), coords, types, truth (data.table), lib).
+list(counts (genes x cells), coords, types, truth (data.table), lib, region (per cell); \code{truth} gains
+a \code{region} column ("all", "right" or "opposite")).
 }
 \description{
 Three cell types in smooth domains (cells about 10 microns apart). Ground truth the model never sees:
