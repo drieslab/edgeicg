@@ -25,7 +25,10 @@ edgeicg_region_results(
 }
 \value{
 data.table with one row per entry and region: receiver, sender, gene, scale, region, n_cells,
-n_exposed, effect, lfc, se, z, q, global_z, global_q, Q, df, q_het, pattern.
+n_exposed, effect, lfc, se, z, q, global_z, global_q, Q, df, q_het, pattern, class. \code{lfc} uses the pair's
+global exposure contrast (10th to 90th percentile), so it is comparable between regions. \code{class} is the
+entry's hit class (\code{\link[=edgeicg_classify]{edgeicg_classify()}}): a region-dependent \code{sender_marker} hit often reflects a sender
+whose own expression differs between regions, not the receiver.
 }
 \description{
 For a fit with \verb{region =}, the effect of every testable entry within each region, and a test of whether the

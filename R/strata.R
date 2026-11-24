@@ -135,12 +135,20 @@ edgeicg_patches <- function(coords, size = 1000) {
 #' @param min_lfc effect-size floor for a region to count as significant.
 #' @param all FALSE (default): only entries that are heterogeneous or significant in at least one region.
 #' @return data.table with one row per entry and region: receiver, sender, gene, scale, region, n_cells,
-#'   n_exposed, effect, lfc, se, z, q, global_z, global_q, Q, df, q_het, pattern.
+#'   n_exposed, effect, lfc, se, z, q, global_z, global_q, Q, df, q_het, pattern, class. `lfc` uses the pair's
+#'   global exposure contrast (10th to 90th percentile), so it is comparable between regions. `class` is the
+#'   entry's hit class ([edgeicg_classify()]): a region-dependent `sender_marker` hit often reflects a sender
+#'   whose own expression differs between regions, not the receiver.
 #' @export
 edgeicg_region_results <- function(x, scale = c("contact", "paracrine", "niche"), q_thr = 0.05, min_lfc = 0.25, all = FALSE) {
   stopifnot(inherits(x, "EdgeICG"))
   if (is.null(x$region)) stop("the fit has no region effects; run edgeicg(region = ...)")
-  .strata_table(x, x$region, match.arg(scale, several.ok = TRUE), q_thr, min_lfc, all, "region")
+  r <- .strata_table(x, x$region, match.arg(scale, several.ok = TRUE), q_thr, min_lfc, all, "region")
+  if (!nrow(r)) return(r)
+  cl <- edgeicg_classify(x, unique(r[, list(receiver, sender, gene, scale, z = global_z)]))
+  r <- cl[, list(receiver, sender, gene, scale, class)][r, on = c("receiver", "sender", "gene", "scale")]
+  data.table::setcolorder(r, c(setdiff(names(r), "class"), "class"))
+  r[]
 }
 
 #' Local effects (experimental)
@@ -225,7 +233,7 @@ edgeicg_local_results <- function(x, scale = c("contact", "paracrine", "niche"),
 .strata_collect <- function(nm, k, S, STR, blocks, dz, fitted, pairs, G, K, types, smat, tested, exposed_at, fits,
                             okn, im, tmr, min_exposed_region, local_p) {
   D <- length(S$labels); P_n <- nrow(pairs); local <- nm == "local"
-  exq <- .strata_exposure(S$code, D, types, pairs, smat, tested, exposed_at, need_dx = !local)
+  exq <- .strata_exposure(S$code, D, types, pairs, smat, tested, exposed_at, need_dx = FALSE)
   if (!local) {
     eff <- lapply(tested, function(s) array(NA_real_, c(P_n, G, D))); names(eff) <- tested; ses <- eff
   } else {
@@ -289,8 +297,10 @@ edgeicg_local_results <- function(x, scale = c("contact", "paracrine", "niche"),
       Hq$Q[pp, ] <- h$Q; Hq$df[pp, ] <- h$df; Hq$tau2[pp, ] <- h$tau2; Hq$p[pp, ] <- h$p
     }
     Hq$q <- bh(Hq$p); hr[[s]] <- Hq
-    dx <- exq[[s]]$dx
-    lfc[[s]] <- array(vapply(seq_len(D), function(d) .edgeicg_lfc(eff[[s]][, , d], dx[, d], tmr), matrix(0, P_n, G)), c(P_n, G, D))
+    # the pair's global exposure contrast (10th to 90th percentile), the same in every region, so that region
+    # effect sizes are comparable (a region's own range is ~0 where few receivers are exposed)
+    dx <- pairs[[paste0("dx_", s)]]
+    lfc[[s]] <- array(vapply(seq_len(D), function(d) .edgeicg_lfc(eff[[s]][, , d], dx, tmr), matrix(0, P_n, G)), c(P_n, G, D))
   }
   list(labels = S$labels, n_cells = ncell, effect = eff, se = ses, lfc = lfc, het = hr,
        n_exposed = lapply(exq, `[[`, "ne"))
