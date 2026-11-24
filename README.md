@@ -47,6 +47,25 @@ For real data:
 - **Why a floor:** at whole-section power, significance alone also picks up small associations caused by zonation or by sub-states within a cell type. On the Atera kidney section the floor cut null-gene calls from 27% to 6% without losing planted effects. It is free: no refit.
 - **Spatial covariates (optional):** `covariates = spatial_basis(coords)`, usually with `covariate_scope = "niche"`. They adjust for smooth spatial trends and fix the niche-scale confounding (pseudo-null 4.7% → 0.6%) at about 1.4× the run time.
 
+## Regions
+An effect can hold in one part of the tissue only, or go in opposite directions in two parts, so that the global
+effect is diluted or cancels out. With `region = ` (a label per cell, for example spatial domains or niches), every
+entry is also estimated within each region and tested for differences between regions:
+
+```r
+fit <- edgeicg(counts, coords, types, lib = lib, region = domain)
+edgeicg_region_results(fit)   # per entry and region: effect, lfc, z, q; Q and q_het between regions; pattern
+```
+
+- **Within a region:** the slope of the receiver's leak-corrected expression on its exposure, adjusted for the other senders and scales of the global model, with a region intercept. The leak model stays global.
+- **Between regions:** Cochran's Q over regions, BH within scale (`q_het`).
+- **`pattern`:** `shared`, `specific` (significant in one region), `opposite` (significant in a region, the other direction elsewhere) or `variable`.
+- **Calibration:** at niche scale the region standard errors carry the pair's calibrated variance inflation.
+- **Cost:** about 1.1× the run time.
+
+`local = TRUE` (square patches, no labels) is experimental: its test over patches is calibrated but has little
+power for smooth or half-plane patterns.
+
 ## Giotto
 `Giotto::findInteractionChangedFeats(g, cluster_column = ..., method = "edgeicg")` runs this engine on a giotto object. The expression can be in memory or GiottoDisk-backed.
 
