@@ -29,7 +29,8 @@ test_that("a supplied leak (fit or table) is used as is", {
   f1 <- fitl(genes = sub, leak = full)
   f2 <- fitl(genes = sub, leak = data.frame(receiver = full$types[full$pairs$receiver],
                                             sender = full$types[full$pairs$sender],
-                                            lambda = full$pairs$lambda, mu = full$pairs$mu))
+                                            lambda = full$pairs$lambda, mu = full$pairs$mu,
+                                            leak_status = full$pairs$leak_status))
   f3 <- fitl(genes = sub)
   expect_equal(f1$scale_fits, f3$scale_fits); expect_equal(f2$scale_fits, f3$scale_fits)
   expect_equal(f1$settings$leak_genes, "supplied")
@@ -39,4 +40,19 @@ test_that("a supplied leak (fit or table) is used as is", {
 test_that("the leak pass gives the same lambda with windows and workers", {
   f <- fitl(genes = sub, window_cells = 1200)
   expect_equal(f$pairs$lambda, full$pairs$lambda, tolerance = 1e-8)
+})
+
+test_that("leak pooling: pairs are shrunk toward the receiver median by contact support; raw values are kept", {
+  P <- full$pairs
+  expect_true(all(c("support", "leak_status", "lambda_raw", "mu_raw") %in% names(P)))
+  ref <- edgeicg:::.leak_pool(P$receiver, P$lambda_raw, P$mu_raw, P$support, "median", 30)
+  expect_equal(P$lambda, ref$lambda); expect_equal(P$mu, ref$mu); expect_equal(P$leak_status, ref$status)
+  ok <- P$leak_status == "ok"; expect_true(all(P$support[ok] >= 30))
+  expect_true(all(P$lambda >= 0 & P$lambda <= 1))
+  n <- fitl(genes = sub, leak_pool = "none")
+  expect_equal(n$pairs$lambda[n$pairs$leak_status == "ok"], n$pairs$lambda_raw[n$pairs$leak_status == "ok"])
+  expect_true(all(is.na(n$pairs$lambda[n$pairs$leak_status != "ok"])))
+  # a plain table (no status) is pooled; with pool = "none" and raw values it reproduces the unpooled fit
+  raw <- data.frame(receiver = full$types[P$receiver], sender = full$types[P$sender], lambda = P$lambda_raw, mu = P$mu_raw)
+  expect_equal(fitl(genes = sub, leak = raw)$pairs$lambda, P$lambda)
 })

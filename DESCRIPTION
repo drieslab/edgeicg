@@ -1,7 +1,7 @@
 Package: edgeicg
 Type: Package
 Title: Spillover-Aware Interaction-Changed Genes at Contact, Paracrine and Niche Scale
-Version: 0.3.0
+Version: 0.3.1
 Authors@R: person("Ruben", "Dries", email = "rdries@bu.edu", role = c("aut", "cre"))
 Description: Tests whether a receiver cell type changes a gene's expression with its
     exposure to a sender cell type, at three spatial scales: touching cells (contact),
