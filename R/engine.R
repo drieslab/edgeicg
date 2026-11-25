@@ -18,7 +18,8 @@
                             min_exposed, exposed_at, huber, scale, calibrate, B, min_shift, seed, calib_cond, attribute,
                             q_thr, max_size, prior_sd, cs_level, workers, xp, drop_degenerate, prefilter, panel_genes,
                             verbose, covariates = NULL, covariate_scope = "all", strata = NULL, min_cells_region = 50L,
-                            min_exposed_region = 20L, local_p = 0.1, leak = NULL, leak_only = FALSE) {
+                            min_exposed_region = 20L, local_p = 0.1, leak = NULL, leak_only = FALSE,
+                            leak_pool = "median", min_support = 30) {
   t0 <- proc.time()[[3]]; tm <- c()
   S <- .edgeicg_setup(pv, coords, types, lib, ex, spill_edges, block_genes, window_cells, min_cells, scale, calibrate,
                       B, min_shift, seed, calib_cond, drop_degenerate, verbose, t0, covariates, covariate_scope,
@@ -114,6 +115,14 @@
   } else {                                     # supplied (fitted on a broader gene set, or from an earlier fit)
     m <- match(paste(pairs$receiver, pairs$sender), paste(leak$receiver, leak$sender))
     lam <- leak$lambda[m]; mu <- leak$mu[m]
+  }
+  pairs$support <- sw_p                        # summed contact share of the sender type over the receivers
+  if (is.null(leak) || !isTRUE(attr(leak, "pooled"))) {   # pool low-contact pairs (leak.R)
+    pl <- .leak_pool(pairs$receiver, lam, mu, sw_p, leak_pool, min_support)
+    pairs$lambda_raw <- lam; pairs$mu_raw <- mu; pairs$leak_status <- pl$status; lam <- pl$lambda; mu <- pl$mu
+    if (verbose && leak_pool != "none")
+      .say(verbose, t0, "leak: %d of %d receiver-sender pairs pooled (contact support < %g or no usable estimate)",
+           sum(pl$status != "ok"), P_n, min_support)
   }
   if (leak_only) {
     pairs$lambda <- lam; pairs$mu <- mu

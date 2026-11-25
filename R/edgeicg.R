@@ -14,7 +14,18 @@
 #'   not change with the genes chosen for testing. This costs one extra pass over all genes (stage 1 only).
 #'   `"tested"`: only the genes in `genes`; faster, but the leak then depends on that selection.
 #' @param leak optional leak coefficients to reuse instead of fitting them: an `EdgeICG` fit or its `pairs`
-#'   table (columns `receiver`, `sender`, `lambda`, `mu`). Pairs without a value get no leak correction.
+#'   table (columns `receiver`, `sender`, `lambda`, `mu`). Pairs without a value get no leak correction. Pooled
+#'   coefficients (a fit or table with a `leak_status` column, or a table with a `status` column such as from
+#'   `lrmap::lrmap_leak()`) are used as given; others are pooled (`leak_pool`).
+#' @param leak_pool how the leak coefficients of receiver-sender pairs with little contact are handled. "median"
+#'   (default): every pair's estimate is shrunk toward the median of the well-supported pairs (contact support >=
+#'   `min_support`) of its receiver type (all well-supported pairs if it has none), with weight support / (support +
+#'   `min_support`); pairs without a usable estimate (little contact, or outside lambda in [0, 1], mu in [-1, 1]) get
+#'   that median. "q1": the first quartile for lambda instead (less correction). "none": no pooling; pairs with
+#'   support below `min_support` or without a usable estimate are not corrected. Contact support is the receivers'
+#'   contact shares of the sender type, summed over the receivers (about the number of fully touching receivers).
+#'   `fit$pairs` keeps `support`, `leak_status`, `lambda_raw` and `mu_raw`.
+#' @param min_support see `leak_pool` (default 30).
 #' @param coords n x 2 cell centroids (microns), in the provider's cell order.
 #' @param types cell-type labels (character or factor), one per cell.
 #' @param lib library size per cell over **all** genes (default: column sums of `counts` if it is a matrix).
@@ -79,8 +90,9 @@ edgeicg <- function(counts, coords, types, lib = NULL, spill_edges = NULL, ex = 
                     B = 30L, min_shift = 450, q_thr = 0.05, min_cells = 60L, min_det = 0.01, min_exposed = 30L,
                     exposed_at = 0.1, drop_degenerate = TRUE, prefilter = TRUE, seed = 1L, verbose = TRUE,
                     region = NULL, local = FALSE, patch_size = 1000, min_cells_region = 50L, min_exposed_region = 20L,
-                    genes = NULL, leak_genes = c("all", "tested"), leak = NULL, ...) {
-  backend <- match.arg(backend); covariate_scope <- match.arg(covariate_scope); leak_genes <- match.arg(leak_genes)
+                    genes = NULL, leak_genes = c("all", "tested"), leak = NULL,
+                    leak_pool = c("median", "q1", "none"), min_support = 30, ...) {
+  leak_pool <- match.arg(leak_pool); backend <- match.arg(backend); covariate_scope <- match.arg(covariate_scope); leak_genes <- match.arg(leak_genes)
   has_rs <- requireNamespace("edgeicgrs", quietly = TRUE)
   if (backend == "rust" && !has_rs) stop("backend = 'rust' needs the edgeicgrs package")
   backend <- if (backend == "r" || !has_rs) "r" else "rust"
@@ -124,6 +136,7 @@ edgeicg <- function(counts, coords, types, lib = NULL, spill_edges = NULL, ex = 
     if (anyNA(gi)) stop(sum(is.na(gi)), " of genes not found in counts, e.g. ", unique(genes)[is.na(gi)][1])
     if (length(gi) == length(pv$genes)) gi <- NULL
   }
+  leak_tab <- NULL
   leak_src <- if (!is.null(leak)) "supplied" else if (is.null(gi)) "all" else leak_genes
   if (!is.null(leak)) {
     lp <- if (inherits(leak, "EdgeICG")) {
@@ -131,8 +144,10 @@ edgeicg <- function(counts, coords, types, lib = NULL, spill_edges = NULL, ex = 
                  lambda = leak$pairs$lambda, mu = leak$pairs$mu)
     } else as.data.frame(leak)
     if (!all(c("receiver", "sender", "lambda", "mu") %in% names(lp))) stop("leak needs receiver, sender, lambda and mu")
+    pooled <- !is.null(if (inherits(leak, "EdgeICG")) leak$pairs$leak_status else lp$leak_status) || !is.null(lp$status)
     leak <- data.frame(receiver = match(as.character(lp$receiver), lev), sender = match(as.character(lp$sender), lev),
                        lambda = lp$lambda, mu = lp$mu)
+    attr(leak, "pooled") <- pooled
   } else if (!is.null(gi) && leak_genes == "all") {                 # stage 1 on all genes, leak only
     if (verbose) message("leak: fitting lambda / mu on all ", length(pv$genes), " genes of counts")
     lk <- .edgeicg_engine(pv, coords, tcode, lib, ex, spill_edges, block_genes, window_cells, min_cells, min_det,
@@ -140,8 +155,8 @@ edgeicg <- function(counts, coords, types, lib = NULL, spill_edges = NULL, ex = 
                           opt("max_size", 2), opt("prior_sd", c(0.05, 0.1, 0.2)), opt("cs_level", 0.95),
                           as.integer(workers), xp_b, drop_degenerate, prefilter, panel_genes, verbose, covariates,
                           covariate_scope, list(), as.integer(min_cells_region), as.integer(min_exposed_region),
-                          leak_only = TRUE)
-    leak <- lk$pairs[, c("receiver", "sender", "lambda", "mu")]
+                          leak_only = TRUE, leak_pool = leak_pool, min_support = min_support)
+    leak_tab <- lk$pairs; leak <- lk$pairs[, c("receiver", "sender", "lambda", "mu")]; attr(leak, "pooled") <- TRUE
     leak_src <- sprintf("all (%d genes)", lk$n_genes)
   }
   if (!is.null(gi)) pv <- pv$narrow(gi)
@@ -151,7 +166,11 @@ edgeicg <- function(counts, coords, types, lib = NULL, spill_edges = NULL, ex = 
                        opt("cs_level", 0.95), as.integer(workers), xp_b,
                        drop_degenerate, prefilter, panel_genes, verbose, covariates, covariate_scope,
                        strata, as.integer(min_cells_region), as.integer(min_exposed_region), opt("local_p", 0.1),
-                       leak = leak)
+                       leak = leak, leak_pool = leak_pool, min_support = min_support)
+  if (!is.null(leak_tab)) {                       # leak fitted on all genes: keep its pooling details in r$pairs
+    m <- match(paste(r$pairs$receiver, r$pairs$sender), paste(leak_tab$receiver, leak_tab$sender))
+    for (cc in intersect(c("support", "leak_status", "lambda_raw", "mu_raw"), names(leak_tab))) r$pairs[[cc]] <- leak_tab[[cc]][m]
+  }
   if (leak_src %in% c("all", "tested")) leak_src <- sprintf("%s (%d genes)", leak_src, length(r$genes))
   r$types <- lev; r$n_cells <- n; r$type_n <- tabulate(tcode, K)
   r$settings <- list(block_genes = block_genes, window_cells = window_cells, workers = workers, backend = backend,
