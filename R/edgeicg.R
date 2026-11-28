@@ -53,8 +53,8 @@
 #' @param min_cells,min_det,min_exposed,exposed_at testability: receiver types with at least `min_cells`
 #'   cells; genes detected in at least `min_det` of receivers; at least `min_exposed` receivers with exposure
 #'   above `exposed_at`. `min_cells = NULL` (default) is twice the coefficients of a receiver type's fit,
-#'   `2 * (1 + 3 * (K - 1) + q)` for K types and q covariates (56 for 10 types). When no type has
-#'   `min_cells` cells, the result is empty, with a message.
+#'   `2 * (1 + 3 * (K - 1) + q)` for K types and q covariates, at most 60 (44 for 8 types, 60 from 11 types).
+#'   When no type has `min_cells` cells, the result is empty, with a message.
 #' @param drop_degenerate drop exposure columns without variance within a receiver type (their tests are NA).
 #'   FALSE keeps them in the design.
 #' @param prefilter drop genes detected in fewer than `min_det` of the cells of every receiver type before the
@@ -106,7 +106,7 @@ edgeicg <- function(counts, coords, types, lib = NULL, spill_edges = NULL, ex = 
     if (nrow(covariates) != n || !is.numeric(covariates) || anyNA(covariates)) stop("covariates must be a numeric n x q matrix without NA")
   }
   if (is.null(min_cells)) {
-    min_cells <- 2L * (1L + 3L * (K - 1L) + if (is.null(covariates)) 0L else ncol(covariates))
+    min_cells <- min(60L, 2L * (1L + 3L * (K - 1L) + if (is.null(covariates)) 0L else ncol(covariates)))
   }
   min_cells <- as.integer(min_cells)
   type_n <- tabulate(tcode, K)

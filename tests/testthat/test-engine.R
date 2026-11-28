@@ -128,8 +128,8 @@ test_that("no cell type reaching min_cells gives an empty result, not an error",
   expect_output(print(f), "0 pairs")
 })
 
-test_that("min_cells = NULL is twice the coefficients of a receiver type's fit", {
+test_that("min_cells = NULL is twice the coefficients of a receiver type's fit, at most 60", {
   K <- length(unique(sim$types))
   f <- edgeicg(sim$counts, sim$coords, sim$types, lib = sim$lib, B = 8, min_shift = 150, verbose = FALSE)
-  expect_equal(f$settings$min_cells, 2L * (1L + 3L * (K - 1L)))
+  expect_equal(f$settings$min_cells, min(60L, 2L * (1L + 3L * (K - 1L))))
 })
