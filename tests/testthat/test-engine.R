@@ -119,3 +119,17 @@ test_that("a rare last cell type (below min_cells) is skipped, not an error", {
                window_cells = 700, backend = "r", verbose = FALSE)
   expect_equal(w$screen$z, f$screen$z, tolerance = 1e-8)
 })
+
+test_that("no cell type reaching min_cells gives an empty result, not an error", {
+  expect_message(f <- edgeicg(sim$counts, sim$coords, sim$types, lib = sim$lib, min_cells = 1e6, verbose = FALSE),
+                 "nothing to test")
+  expect_s3_class(f, "EdgeICG")
+  expect_equal(nrow(edgeicg_results(f, q_thr = 1, min_lfc = 0)), 0L)
+  expect_output(print(f), "0 pairs")
+})
+
+test_that("min_cells = NULL is twice the coefficients of a receiver type's fit", {
+  K <- length(unique(sim$types))
+  f <- edgeicg(sim$counts, sim$coords, sim$types, lib = sim$lib, B = 8, min_shift = 150, verbose = FALSE)
+  expect_equal(f$settings$min_cells, 2L * (1L + 3L * (K - 1L)))
+})

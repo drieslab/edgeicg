@@ -52,7 +52,9 @@
 #' @param q_thr FDR threshold for the niche screen hits that are attributed.
 #' @param min_cells,min_det,min_exposed,exposed_at testability: receiver types with at least `min_cells`
 #'   cells; genes detected in at least `min_det` of receivers; at least `min_exposed` receivers with exposure
-#'   above `exposed_at`.
+#'   above `exposed_at`. `min_cells = NULL` (default) is twice the coefficients of a receiver type's fit,
+#'   `2 * (1 + 3 * (K - 1) + q)` for K types and q covariates (56 for 10 types). When no type has
+#'   `min_cells` cells, the result is empty, with a message.
 #' @param drop_degenerate drop exposure columns without variance within a receiver type (their tests are NA).
 #'   FALSE keeps them in the design.
 #' @param prefilter drop genes detected in fewer than `min_det` of the cells of every receiver type before the
@@ -76,7 +78,7 @@
 edgeicg <- function(counts, coords, types, lib = NULL, spill_edges = NULL, ex = NULL, block_genes = 500L,
                     window_cells = NULL, panel_genes = 3000L, covariates = NULL,
                     covariate_scope = c("all", "niche"), workers = 0L, backend = c("auto", "rust", "r"), threads = NULL, calibrate = TRUE, calib_cond = TRUE, attribute = TRUE,
-                    B = 30L, min_shift = 450, q_thr = 0.05, min_cells = 60L, min_det = 0.01, min_exposed = 30L,
+                    B = 30L, min_shift = 450, q_thr = 0.05, min_cells = NULL, min_det = 0.01, min_exposed = 30L,
                     exposed_at = 0.1, drop_degenerate = TRUE, prefilter = TRUE, seed = 1L, verbose = TRUE,
                     region = NULL, local = FALSE, patch_size = 1000, min_cells_region = 50L, min_exposed_region = 20L,
                     genes = NULL, leak_genes = c("all", "tested"), leak = NULL, ...) {
@@ -102,6 +104,20 @@ edgeicg <- function(counts, coords, types, lib = NULL, spill_edges = NULL, ex = 
   if (!is.null(covariates)) {
     covariates <- as.matrix(covariates)
     if (nrow(covariates) != n || !is.numeric(covariates) || anyNA(covariates)) stop("covariates must be a numeric n x q matrix without NA")
+  }
+  if (is.null(min_cells)) {
+    min_cells <- 2L * (1L + 3L * (K - 1L) + if (is.null(covariates)) 0L else ncol(covariates))
+  }
+  min_cells <- as.integer(min_cells)
+  type_n <- tabulate(tcode, K)
+  if (max(type_n) < min_cells) {
+    message("edgeicg: no cell type has at least min_cells = ", min_cells, " cells (largest: ", max(type_n),
+            "); nothing to test")
+    genes <- if (is.null(genes)) pv$genes else unique(genes)
+    r <- .edgeicg_empty(genes, K)
+    r$types <- lev; r$n_cells <- n; r$type_n <- type_n
+    r$settings <- list(min_cells = min_cells, calibrate = calibrate)
+    return(structure(r, class = "EdgeICG"))
   }
   strata <- list()
   if (!is.null(region)) {
@@ -154,7 +170,7 @@ edgeicg <- function(counts, coords, types, lib = NULL, spill_edges = NULL, ex = 
                        leak = leak)
   if (leak_src %in% c("all", "tested")) leak_src <- sprintf("%s (%d genes)", leak_src, length(r$genes))
   r$types <- lev; r$n_cells <- n; r$type_n <- tabulate(tcode, K)
-  r$settings <- list(block_genes = block_genes, window_cells = window_cells, workers = workers, backend = backend,
+  r$settings <- list(min_cells = min_cells, block_genes = block_genes, window_cells = window_cells, workers = workers, backend = backend,
                      threads = threads, covariates = if (is.null(covariates)) 0L else ncol(covariates),
                      covariate_scope = covariate_scope, calibrate = calibrate,
                      calib_cond = calib_cond, B = B, min_shift = min_shift, q_thr = q_thr, exposures = ex$settings,
@@ -163,6 +179,19 @@ edgeicg <- function(counts, coords, types, lib = NULL, spill_edges = NULL, ex = 
                      min_cells_region = min_cells_region, min_exposed_region = min_exposed_region,
                      leak_genes = leak_src)
   structure(r, class = "EdgeICG")
+}
+
+# An EdgeICG result without tests: no receiver type reaches min_cells.
+.edgeicg_empty <- function(genes, K) {
+  m0 <- matrix(numeric(), 0L, length(genes))
+  fit <- list(effect = m0, se = m0, z = m0, q = m0, lfc = m0)
+  list(genes = genes, K = K, pairs = data.frame(receiver = integer(), sender = integer(), lambda = numeric(),
+       mu = numeric()), fitted = integer(), type_mean = matrix(0, K, K),
+       scale_fits = list(contact = fit, paracrine = fit), screen = fit, attribution = data.table::data.table(
+         receiver = integer(), sender = integer(), gene = character(), z_marg = numeric(), q_marg = numeric(),
+         z_cond = numeric(), pip = numeric(), alpha = numeric(), p_two = numeric(), in_cs = logical(),
+         cs_size = integer()),
+       calibration = NULL, timing = numeric(), n_dropped = 0L, n_prefiltered = 0L, n_windows = 0L)
 }
 
 #' Results table

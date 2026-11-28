@@ -25,7 +25,7 @@ edgeicg(
   B = 30L,
   min_shift = 450,
   q_thr = 0.05,
-  min_cells = 60L,
+  min_cells = NULL,
   min_det = 0.01,
   min_exposed = 30L,
   exposed_at = 0.1,
@@ -105,7 +105,9 @@ The Rust kernels are the matrix cross-products of the sweeps, the hotspot of the
 
 \item{min_cells, min_det, min_exposed, exposed_at}{testability: receiver types with at least \code{min_cells}
 cells; genes detected in at least \code{min_det} of receivers; at least \code{min_exposed} receivers with exposure
-above \code{exposed_at}.}
+above \code{exposed_at}. \code{min_cells = NULL} (default) is twice the coefficients of a receiver type's fit,
+\code{2 * (1 + 3 * (K - 1) + q)} for K types and q covariates (56 for 10 types). When no type has
+\code{min_cells} cells, the result is empty, with a message.}
 
 \item{drop_degenerate}{drop exposure columns without variance within a receiver type (their tests are NA).
 FALSE keeps them in the design.}
